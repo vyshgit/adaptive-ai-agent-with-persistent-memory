@@ -93,6 +93,8 @@ export default function App() {
   const [plan, setPlan] = useState<PlanTask[]>([])
   const [publisherUrl, setPublisherUrl] = useState('')
   const [aggregatorUrl, setAggregatorUrl] = useState('')
+  const [sdkInfo, setSdkInfo] = useState<any>(null)
+  const [suiCheckpoint, setSuiCheckpoint] = useState<any>(null)
 
   // Goal & Constraints Input State
   const [goalInput, setGoalInput] = useState('Build & Launch RecallLoop MVP with Walrus Memory')
@@ -139,6 +141,18 @@ export default function App() {
         setPlan(data.plan || [])
         setPublisherUrl(data.publisherUrl || '')
         setAggregatorUrl(data.aggregatorUrl || '')
+        setSdkInfo(data.sdk || null)
+      }
+
+      // Check Tatum Sui RPC
+      try {
+        const suiRes = await fetch('/api/tatum/sui-checkpoint')
+        if (suiRes.ok) {
+          const suiData = await suiRes.json()
+          setSuiCheckpoint(suiData)
+        }
+      } catch (err) {
+        console.warn('Tatum Sui RPC check error:', err)
       }
     } catch (e) {
       console.error('Failed to load state', e)
@@ -730,6 +744,12 @@ export default function App() {
 
             <div className="flex flex-col gap-sm text-xs text-secondary">
               <div className="flex justify-between">
+                <span>MemWal SDK:</span>
+                <span className="font-semibold text-utility-brand-700">
+                  v{sdkInfo?.sdkVersion || '0.1.10'} ({sdkInfo?.status === 'ready' ? 'Ready' : 'Installed'})
+                </span>
+              </div>
+              <div className="flex justify-between">
                 <span>Publisher Node:</span>
                 <span className="font-mono text-tertiary text-xs">nodes.guru</span>
               </div>
@@ -742,10 +762,23 @@ export default function App() {
                 <span className="font-semibold text-primary">{memories.length}</span>
               </div>
               <div className="flex justify-between">
+                <span>Tatum Sui Mainnet Gateway:</span>
+                <span className="font-semibold text-utility-brand-700">
+                  {suiCheckpoint ? `Status ${suiCheckpoint.status}` : 'Initialized'}
+                </span>
+              </div>
+              <div className="flex justify-between">
                 <span>Decentralized Recall:</span>
                 <span className="font-semibold text-utility-success-700">Verified</span>
               </div>
             </div>
+
+            {sdkInfo?.blockerNotice && (
+              <div className="p-xs rounded-md bg-utility-gray-50 border border-utility-gray-200 text-xs text-secondary">
+                <span className="font-semibold text-primary">Relayer Notice: </span>
+                {sdkInfo.blockerNotice}
+              </div>
+            )}
 
             <p className="pt-sm border-t border-secondary text-xs text-tertiary">
               Memory blobs remain retrievable across restarts, browser wipes, and multi-session workflows.

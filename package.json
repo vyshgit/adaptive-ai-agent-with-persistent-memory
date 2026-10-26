@@ -6,6 +6,7 @@
     "dev": "node server/index.mjs"
   },
   "dependencies": {
+    "@mysten-incubation/memwal": "^0.1.10",
     "@vitejs/plugin-react": "^4.3.1",
     "express": "^4.21.0",
     "lucide-react": "^1.31.0",

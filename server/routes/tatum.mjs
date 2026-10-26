@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { tatumApiBase, tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
+import { tatumApiBase, tatumFetch, tatumRpc, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
 
@@ -15,12 +15,24 @@ router.get('/status', async (_req, res) => {
   }
 })
 
-// Read-only Tatum API request route keeping API key strictly server-side
-router.get('/version', async (_req, res) => {
+// Read-only Sui Mainnet JSON-RPC request route keeping credentials strictly server-side
+router.get('/sui-checkpoint', async (_req, res) => {
   try {
-    const response = await tatumFetch('/v3/tatum/version')
-    const data = await response.json()
-    res.json({ success: true, data })
+    const rpcPayload = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'sui_getLatestCheckpointSequenceNumber',
+      params: []
+    }
+    const response = await tatumRpc('sui', rpcPayload, 'mainnet')
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const data = await response.json()
+      res.json({ success: response.ok, status: response.status, data })
+    } else {
+      const text = await response.text()
+      res.json({ success: response.ok, status: response.status, raw: text })
+    }
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
       res.status(503).json({ success: false, status: 'no-api-key', error: error.message })
