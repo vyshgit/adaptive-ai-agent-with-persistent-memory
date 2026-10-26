@@ -23,3 +23,5 @@ jobs:
         run: npm run test:admin-auth
       - name: Test retrieval
         run: npm run test:retrieval
+      - name: Run lexical retrieval benchmark
+        run: npm run benchmark:retrieval
