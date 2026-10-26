@@ -27,7 +27,7 @@ Set a separate high-entropy secret (at least 32 characters):
 export RECALLLOOP_ADMIN_API_KEY='REPLACE_WITH_A_DIFFERENT_RANDOM_SECRET_AT_LEAST_32_CHARACTERS'
 ```
 
-Send it as `Authorization: Bearer <admin-key>` from a trusted server-side client. Do not put this key in `src/App.tsx`, browser JavaScript, or any public frontend configuration. In production, these routes fail closed with HTTP 503 if the admin key is missing. To operate the browser dashboard in production, put it behind an authenticated reverse proxy or implement a proper session-based admin login; do not expose the admin key to the browser. Local development without an admin key remains convenient but is not safe for untrusted network exposure.
+Send it as `Authorization: Bearer <admin-key>` from a trusted server-side client. Do not put this key in `src/App.tsx`, browser JavaScript, or any public frontend configuration. In production, these routes fail closed with HTTP 503 if the admin key is missing. To operate the browser dashboard in production, put it behind an authenticated reverse proxy or implement a proper session-based admin login; do not expose the admin key to the browser. The dashboard's manual memory-store call also uses the agent API, so a trusted proxy must inject the configured `recallloop-dashboard` agent key for that route (or the UI must be updated to use a server-side session-backed endpoint). Local development without an admin key remains convenient but is not safe for untrusted network exposure.
 
 ## Scope and remaining limitations
 
