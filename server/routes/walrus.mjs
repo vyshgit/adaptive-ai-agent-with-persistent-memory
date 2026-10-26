@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { MemWal } from '@mysten-incubation/memwal'
 import { loadMemories, persistMemory } from '../memory-index.mjs'
+import { authenticateAgent } from '../agent-auth.mjs'
 import { tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
@@ -189,7 +190,7 @@ router.get('/state', (_req, res) => {
 })
 
 // POST /api/walrus/store - Store a memory directly to Walrus Memory
-router.post('/store', async (req, res) => {
+router.post('/store', authenticateAgent, async (req, res) => {
   try {
     const { agentId, title, taskTitle, outcome, feedback, plannedDurationMinutes, lesson, metadata } = req.body
     const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
@@ -288,7 +289,7 @@ router.post('/store', async (req, res) => {
 // POST /api/walrus/recall - Retrieve agent-scoped memories using lightweight lexical ranking.
 // Note: the index is currently process-local; Walrus blobs persist, but discovery across a
 // server restart requires a durable metadata index and is intentionally not claimed here.
-router.post('/recall', (req, res) => {
+router.post('/recall', authenticateAgent, (req, res) => {
   const { agentId, query, limit = 5 } = req.body || {}
   const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
   const normalizedQuery = typeof query === 'string' ? query.trim() : ''
