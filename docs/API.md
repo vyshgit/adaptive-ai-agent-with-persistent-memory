@@ -48,7 +48,7 @@ Use the exact `blobId` returned by a successful store operation.
 
 ## Current limitations (important)
 
-- **Walrus stores the memory payload, but the recall index is currently in process memory.** The index is lost when the server restarts. Blob contents remain on Walrus for their configured storage lifetime, but the service cannot discover all blobs for an agent after a restart yet.
+- **The metadata index is file-backed, not a managed database.** It survives process restarts when the data directory is retained. Container filesystems may be ephemeral, so set `RECALLLOOP_DATA_DIR` to a persistent mounted volume in deployment. This prototype index is intended for a single server process; it does not coordinate concurrent writes across multiple server instances.
 - Recall is lexical, not semantic. MemWal is installed but not yet integrated into this retrieval path.
 - The API does not yet authenticate callers or enforce per-agent access control. Run it only in a trusted development environment; do not expose it as a public multi-tenant service until authentication, authorization, rate limits, and request-size limits are implemented.
 - This is a prototype contract, not a production SLA. Configure the publisher and aggregator for the same Walrus network.
