@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { MemWal } from '@mysten-incubation/memwal'
+import { loadMemories, persistMemory } from '../memory-index.mjs'
 import { tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
@@ -30,7 +31,7 @@ function getSdkStatus() {
 }
 
 // Initial verified bootstrap memories stored on Walrus Mainnet/Testnet
-let localMemories = [
+const bootstrapMemories = [
   {
     id: 'mem_init_01',
     blobId: '2uN5yCl_YqaqtHlxIXlWYwJCihI1mPU2aJqHwiGf8HM',
@@ -62,6 +63,10 @@ let localMemories = [
     walrusEpoch: 562
   }
 ]
+
+// Demo memories remain visible in the developer console; only real agent writes
+// are stored in the durable index and eligible for agent-scoped recall.
+let localMemories = [...await loadMemories(), ...bootstrapMemories]
 
 let activeHypotheses = [
   {
@@ -261,6 +266,11 @@ router.post('/store', async (req, res) => {
       walrusEpoch
     }
 
+    try {
+      await persistMemory(newMemory)
+    } catch (indexError) {
+      return res.status(500).json({ success: false, error: 'Walrus stored the blob, but the durable memory index could not be updated.', details: indexError.message, blobId: walrusBlobId })
+    }
     localMemories.unshift(newMemory)
 
     res.json({
@@ -443,6 +453,11 @@ router.post('/task/outcome', async (req, res) => {
       lesson,
       timestamp: new Date().toISOString(),
       walrusEpoch
+    }
+    try {
+      await persistMemory(recordedMemory)
+    } catch (indexError) {
+      return res.status(500).json({ success: false, error: 'Walrus stored the outcome blob, but the durable memory index could not be updated.', details: indexError.message, blobId: walrusBlobId })
     }
     localMemories.unshift(recordedMemory)
 
