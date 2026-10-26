@@ -182,7 +182,9 @@ router.get('/state', (_req, res) => {
     aggregatorUrl: WALRUS_AGGREGATOR,
     network: WALRUS_NETWORK,
     sdk: getSdkStatus(),
-    memories: localMemories,
+    // The dashboard state endpoint is not an agent API. Never expose agent-owned
+    // memory content here; agent memories are available only through authenticated recall.
+    memories: localMemories.filter(memory => !memory.agentId || memory.agentId === 'recallloop-dashboard'),
     hypotheses: activeHypotheses,
     policy: currentPolicy,
     plan: activePlan
@@ -287,8 +289,8 @@ router.post('/store', authenticateAgent, async (req, res) => {
 
 
 // POST /api/walrus/recall - Retrieve agent-scoped memories using lightweight lexical ranking.
-// Note: the index is currently process-local; Walrus blobs persist, but discovery across a
-// server restart requires a durable metadata index and is intentionally not claimed here.
+// Memory metadata is loaded from the file-backed index at startup. Persistence across
+// restarts depends on RECALLLOOP_DATA_DIR pointing at retained storage.
 router.post('/recall', authenticateAgent, (req, res) => {
   const { agentId, query, limit = 5 } = req.body || {}
   const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
@@ -327,7 +329,7 @@ router.post('/recall', authenticateAgent, (req, res) => {
     success: true,
     agentId: normalizedAgentId,
     query: normalizedQuery,
-    retrieval: { strategy: 'lexical', indexDurability: 'process-local', semanticSearch: false },
+    retrieval: { strategy: 'lexical', indexDurability: 'file-backed', semanticSearch: false },
     memories: ranked.map(({ memory, score }) => ({ ...memory, score }))
   })
 })
