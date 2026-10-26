@@ -442,6 +442,7 @@ router.post('/task/outcome', async (req, res) => {
     const recordedMemory = {
       id: 'mem_' + Date.now(),
       blobId: walrusBlobId,
+      agentId: 'recallloop-dashboard',
       storageType: 'walrus_certified',
       sessionNumber: localMemories.length + 1,
       type: 'lesson',
