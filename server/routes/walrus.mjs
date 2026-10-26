@@ -262,6 +262,7 @@ router.post('/store', async (req, res) => {
       outcome: memoryPayload.data.outcome,
       feedback: memoryPayload.data.feedback,
       lesson: memoryPayload.data.lesson,
+      metadata: memoryPayload.data.metadata,
       timestamp: memoryPayload.timestamp,
       walrusEpoch
     }
@@ -311,6 +312,7 @@ router.post('/recall', (req, res) => {
         memory.taskTitle,
         memory.feedback,
         memory.lesson,
+        memory.metadata ? JSON.stringify(memory.metadata) : '',
         memory.outcome
       ].filter(Boolean).join(' ').toLowerCase()
       const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0)
