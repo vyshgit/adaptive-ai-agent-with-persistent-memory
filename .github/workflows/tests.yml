@@ -19,3 +19,5 @@ jobs:
         run: npm run test:auth
       - name: Test dashboard memory visibility
         run: npm run test:visibility
+      - name: Test admin API authentication
+        run: npm run test:admin-auth
