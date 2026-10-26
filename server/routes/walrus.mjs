@@ -3,6 +3,7 @@ import { MemWal } from '@mysten-incubation/memwal'
 import { loadMemories, persistMemory } from '../memory-index.mjs'
 import { isDashboardVisibleMemory } from '../memory-visibility.mjs'
 import { authenticateAgent } from '../agent-auth.mjs'
+import { authenticateAdmin } from '../admin-auth.mjs'
 import { tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
@@ -177,7 +178,7 @@ let activePlan = [
 ]
 
 // GET /api/walrus/state
-router.get('/state', (_req, res) => {
+router.get('/state', authenticateAdmin, (_req, res) => {
   res.json({
     publisherUrl: WALRUS_PUBLISHER,
     aggregatorUrl: WALRUS_AGGREGATOR,
@@ -336,7 +337,7 @@ router.post('/recall', authenticateAgent, (req, res) => {
 })
 
 // GET /api/walrus/blob/:blobId - Fetch raw content from Walrus Aggregator
-router.get('/blob/:blobId', async (req, res) => {
+router.get('/blob/:blobId', authenticateAdmin, async (req, res) => {
   const { blobId } = req.params
 
   // Validate blobId format: Walrus blob IDs are base64url or hex strings, never internal names
@@ -376,7 +377,7 @@ router.get('/blob/:blobId', async (req, res) => {
 })
 
 // POST /api/walrus/task/outcome - Record task outcome, adapt hypotheses & policy
-router.post('/task/outcome', async (req, res) => {
+router.post('/task/outcome', authenticateAdmin, async (req, res) => {
   try {
     const { taskId, outcome, feedback, outcomeReason } = req.body
 
@@ -526,7 +527,7 @@ router.post('/task/outcome', async (req, res) => {
 })
 
 // POST /api/walrus/plan/generate - Generate/adapt plan using memory & hypotheses
-router.post('/plan/generate', async (req, res) => {
+router.post('/plan/generate', authenticateAdmin, async (req, res) => {
   try {
     const { goal, constraints } = req.body
 
@@ -614,7 +615,7 @@ router.post('/plan/generate', async (req, res) => {
 })
 
 // POST /api/walrus/slice/run - Execute smallest verified end-to-end slice
-router.post('/slice/run', async (_req, res) => {
+router.post('/slice/run', authenticateAdmin, async (_req, res) => {
   const auditReport = {
     step1_write: null,
     step2_confirm: null,
