@@ -12,7 +12,9 @@
     "test:retrieval": "node --test tests/memory-retrieval.test.mjs tests/retrieval-benchmark.test.mjs",
     "benchmark:retrieval": "node scripts/retrieval-benchmark.mjs",
     "evaluate:retrieval": "node scripts/retrieval-evaluation.mjs",
-    "test:vector-candidate": "node --test tests/vector-retrieval-candidate.test.mjs"
+    "test:vector-candidate": "node --test tests/vector-retrieval-candidate.test.mjs",
+    "test:embedding-provider": "node --test tests/openai-embedding-provider.test.mjs",
+    "evaluate:vector": "node scripts/evaluate-vector-retrieval.mjs"
   },
   "dependencies": {
     "@mysten-incubation/memwal": "^0.1.10",
