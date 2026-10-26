@@ -57,10 +57,10 @@ Configure agent and admin keys as described in [API authentication](AUTHENTICATI
 ## Current limitations (important)
 
 - **The metadata index is file-backed, not a managed database.** It survives process restarts when the data directory is retained. Container filesystems may be ephemeral, so set `RECALLLOOP_DATA_DIR` to a persistent mounted volume in deployment. This prototype index is intended for a single server process; it does not coordinate concurrent writes across multiple server instances.
-- Recall is lexical, not semantic. MemWal is installed but not yet integrated into this retrieval path.
+- Recall is lexical, not semantic. MemWal is installed but not yet integrated into this retrieval path. A small synthetic baseline benchmark is available via `npm run benchmark:retrieval`; its metrics are only a smoke-test baseline, not a representative quality evaluation.
 - Agent API authentication covers store/recall, and separate admin-key authentication covers dashboard state, blob retrieval, task outcomes, plan generation, and slice execution. Rate limiting, session-based dashboard login, audit logs, and managed multi-instance key storage are not implemented; do not treat this prototype as production-ready.
 - This is a prototype contract, not a production SLA. Configure the publisher and aggregator for the same Walrus network.
 
 ## Next implementation milestone
 
-Move the file-backed index to a managed database/object index suitable for multiple instances. Then add semantic retrieval and an end-to-end restart-persistence test against Walrus. Authentication is already present for store/recall, but other routes still need authorization. A useful acceptance test is: store a memory, restart the server, and retrieve it using the same agent ID and a related query.
+Expand the retrieval evaluation set with realistic, manually judged queries and hard negatives, then compare a semantic/vector retrieval candidate against this lexical baseline before selecting an approach. For deployment beyond one server process, replace the file-backed index with a transactional shared store. A full end-to-end Walrus store/restart/recall test still requires a controlled publisher fixture or test seam; the current process-restart test verifies the local metadata index only. Agent routes and dashboard/control routes have separate authorization middleware, but rate limiting, session-based dashboard login, audit logs, and multi-instance key storage remain unfinished.
