@@ -433,12 +433,6 @@ router.post('/task/outcome', async (req, res) => {
       return res.status(502).json({ success: false, error: 'Walrus task-outcome memory write failed; task state was not updated.', details: e.message })
     }
 
-    // Mutate the task only after Walrus confirms a real blob ID.
-    task.status = outcome
-    task.feedback = feedback || ''
-    task.outcomeReason = outcomeReason || ''
-    task.completedAt = new Date().toISOString()
-
     const recordedMemory = {
       id: 'mem_' + Date.now(),
       blobId: walrusBlobId,
@@ -461,6 +455,12 @@ router.post('/task/outcome', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Walrus stored the outcome blob, but the durable memory index could not be updated.', details: indexError.message, blobId: walrusBlobId })
     }
     localMemories.unshift(recordedMemory)
+
+    // Mutate task state only after both Walrus and the durable index succeeded.
+    task.status = outcome
+    task.feedback = feedback || ''
+    task.outcomeReason = outcomeReason || ''
+    task.completedAt = new Date().toISOString()
 
     // 3. Update Hypotheses Bayesian confidence
     if (task.durationMinutes <= 35) {
