@@ -49,3 +49,20 @@ test('provider surfaces HTTP failures without exposing a full response body', as
   })
   await assert.rejects(embed('query'), /HTTP 429: rate limit exceeded/)
 })
+
+test('provider attaches a bounded timeout signal and validates timeout configuration', async () => {
+  let requestOptions
+  const embed = createOpenAIEmbeddingProvider({
+    apiKey: 'test-key',
+    dimensions: 3,
+    timeoutMs: 1234,
+    fetchImpl: async (_url, options) => {
+      requestOptions = options
+      return { ok: true, json: async () => ({ data: [{ embedding: [0.1, 0.2, 0.3] }] }) }
+    },
+  })
+  await embed('timeout test')
+  assert.ok(requestOptions.signal instanceof AbortSignal)
+  assert.equal(requestOptions.signal.aborted, false)
+  assert.throws(() => createOpenAIEmbeddingProvider({ apiKey: 'test-key', timeoutMs: 0 }), /timeout must be an integer/)
+})
