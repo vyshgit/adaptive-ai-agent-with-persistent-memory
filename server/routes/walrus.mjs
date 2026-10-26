@@ -186,20 +186,32 @@ router.get('/state', (_req, res) => {
 // POST /api/walrus/store - Store a memory directly to Walrus Memory
 router.post('/store', async (req, res) => {
   try {
-    const { title, taskTitle, outcome, feedback, plannedDurationMinutes, lesson } = req.body
+    const { agentId, title, taskTitle, outcome, feedback, plannedDurationMinutes, lesson, metadata } = req.body
+    const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
+
+    if (!normalizedAgentId || normalizedAgentId.length > 128) {
+      return res.status(400).json({ success: false, error: 'agentId is required and must be at most 128 characters.' })
+    }
+    if (outcome !== undefined && !['completed', 'postponed', 'failed', 'neutral'].includes(outcome)) {
+      return res.status(400).json({ success: false, error: 'Invalid outcome. Expected completed, postponed, failed, or neutral.' })
+    }
+    if (metadata !== undefined && (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata))) {
+      return res.status(400).json({ success: false, error: 'metadata must be a JSON object when provided.' })
+    }
 
     const memoryPayload = {
       type: 'agent_experience_memory',
-      version: '1.0',
+      schemaVersion: '1.1',
       timestamp: new Date().toISOString(),
-      agent: 'RecallLoop-v1',
+      agentId: normalizedAgentId,
       data: {
         title: title || 'Task Experience Record',
         taskTitle: taskTitle || 'Unspecified task',
         outcome: outcome || 'neutral',
         feedback: feedback || '',
-        plannedDurationMinutes: plannedDurationMinutes || 25,
-        lesson: lesson || 'Observed task behaviour and captured result.'
+        plannedDurationMinutes: Number.isFinite(Number(plannedDurationMinutes)) && Number(plannedDurationMinutes) > 0 ? Number(plannedDurationMinutes) : 25,
+        lesson: lesson || 'Observed task behaviour and captured result.',
+        metadata: metadata || {}
       }
     }
 
@@ -235,6 +247,7 @@ router.post('/store', async (req, res) => {
     const newMemory = {
       id: 'mem_' + Date.now(),
       blobId: walrusBlobId,
+      agentId: normalizedAgentId,
       storageType: 'walrus_certified',
       sessionNumber: localMemories.length + 1,
       type: 'lesson',
@@ -258,6 +271,52 @@ router.post('/store', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+})
+
+
+// POST /api/walrus/recall - Retrieve agent-scoped memories using lightweight lexical ranking.
+// Note: the index is currently process-local; Walrus blobs persist, but discovery across a
+// server restart requires a durable metadata index and is intentionally not claimed here.
+router.post('/recall', (req, res) => {
+  const { agentId, query, limit = 5 } = req.body || {}
+  const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
+  const normalizedQuery = typeof query === 'string' ? query.trim() : ''
+
+  if (!normalizedAgentId || normalizedAgentId.length > 128) {
+    return res.status(400).json({ success: false, error: 'agentId is required and must be at most 128 characters.' })
+  }
+  if (!normalizedQuery) {
+    return res.status(400).json({ success: false, error: 'query is required.' })
+  }
+
+  const requestedLimit = Number(limit)
+  const safeLimit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 20)) : 5
+  const terms = [...new Set(normalizedQuery.toLowerCase().split(/[^\\p{L}\\p{N}_-]+/u).filter(term => term.length > 1))]
+
+  const ranked = localMemories
+    .filter(memory => memory.agentId === normalizedAgentId)
+    .map(memory => {
+      const searchable = [
+        memory.title,
+        memory.taskTitle,
+        memory.feedback,
+        memory.lesson,
+        memory.outcome
+      ].filter(Boolean).join(' ').toLowerCase()
+      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0)
+      return { memory, score }
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || new Date(b.memory.timestamp) - new Date(a.memory.timestamp))
+    .slice(0, safeLimit)
+
+  return res.json({
+    success: true,
+    agentId: normalizedAgentId,
+    query: normalizedQuery,
+    retrieval: { strategy: 'lexical', indexDurability: 'process-local', semanticSearch: false },
+    memories: ranked.map(({ memory, score }) => ({ ...memory, score }))
+  })
 })
 
 // GET /api/walrus/blob/:blobId - Fetch raw content from Walrus Aggregator
