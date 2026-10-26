@@ -291,7 +291,7 @@ router.post('/recall', (req, res) => {
 
   const requestedLimit = Number(limit)
   const safeLimit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 20)) : 5
-  const terms = [...new Set(normalizedQuery.toLowerCase().split(/[^\\p{L}\\p{N}_-]+/u).filter(term => term.length > 1))]
+  const terms = [...new Set(normalizedQuery.toLowerCase().split(/[^a-z0-9_-]+/i).filter(term => term.length > 1))]
 
   const ranked = localMemories
     .filter(memory => memory.agentId === normalizedAgentId)
