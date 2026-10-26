@@ -274,6 +274,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          agentId: 'recallloop-dashboard',
           title: newMemTitle,
           taskTitle: newMemTask,
           outcome: newMemOutcome,
