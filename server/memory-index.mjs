@@ -1,9 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // A small durable metadata index for the prototype. Point RECALLLOOP_DATA_DIR at
 // a persistent mounted volume in deployment; container-local disks may be ephemeral.
-const dataDirectory = process.env.RECALLLOOP_DATA_DIR || path.join(process.cwd(), 'data')
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
+const dataDirectory = process.env.RECALLLOOP_DATA_DIR || path.resolve(moduleDirectory, '..', 'data')
 const indexPath = path.join(dataDirectory, 'memories.json')
 let writeQueue = Promise.resolve()
 
