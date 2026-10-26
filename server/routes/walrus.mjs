@@ -4,6 +4,7 @@ import { loadMemories, persistMemory } from '../memory-index.mjs'
 import { isDashboardVisibleMemory } from '../memory-visibility.mjs'
 import { authenticateAgent } from '../agent-auth.mjs'
 import { authenticateAdmin } from '../admin-auth.mjs'
+import { retrieveMemories } from '../memory-retrieval.mjs'
 import { tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
@@ -305,34 +306,13 @@ router.post('/recall', authenticateAgent, (req, res) => {
     return res.status(400).json({ success: false, error: 'query is required.' })
   }
 
-  const requestedLimit = Number(limit)
-  const safeLimit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 20)) : 5
-  const terms = [...new Set(normalizedQuery.toLowerCase().split(/[^a-z0-9_-]+/i).filter(term => term.length > 1))]
-
-  const ranked = localMemories
-    .filter(memory => memory.agentId === normalizedAgentId)
-    .map(memory => {
-      const searchable = [
-        memory.title,
-        memory.taskTitle,
-        memory.feedback,
-        memory.lesson,
-        memory.metadata ? JSON.stringify(memory.metadata) : '',
-        memory.outcome
-      ].filter(Boolean).join(' ').toLowerCase()
-      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0)
-      return { memory, score }
-    })
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score || new Date(b.memory.timestamp) - new Date(a.memory.timestamp))
-    .slice(0, safeLimit)
-
+  const memories = retrieveMemories(localMemories, normalizedAgentId, normalizedQuery, limit)
   return res.json({
     success: true,
     agentId: normalizedAgentId,
     query: normalizedQuery,
     retrieval: { strategy: 'lexical', indexDurability: 'file-backed', semanticSearch: false },
-    memories: ranked.map(({ memory, score }) => ({ ...memory, score }))
+    memories
   })
 })
 
