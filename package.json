@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node server/index.mjs"
+    "dev": "node server/index.mjs",
+    "test": "node --test",
+    "test:memory": "node --test tests/memory-index.test.mjs"
   },
   "dependencies": {
     "@mysten-incubation/memwal": "^0.1.10",
