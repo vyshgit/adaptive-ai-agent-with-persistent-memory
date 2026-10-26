@@ -17,3 +17,5 @@ jobs:
         run: npm run test:memory
       - name: Test agent API authentication
         run: npm run test:auth
+      - name: Test dashboard memory visibility
+        run: npm run test:visibility
