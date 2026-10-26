@@ -17,6 +17,7 @@ test('dashboard state retains memories explicitly created in the dashboard', () 
 })
 
 test('dashboard state does not expose malformed/null records', () => {
-  assert.equal(isDashboardVisibleMemory(null), true)
-  assert.equal(isDashboardVisibleMemory(undefined), true)
+  assert.equal(isDashboardVisibleMemory(null), false)
+  assert.equal(isDashboardVisibleMemory(undefined), false)
+  assert.equal(isDashboardVisibleMemory([]), false)
 })
