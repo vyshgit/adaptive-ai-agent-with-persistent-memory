@@ -46,6 +46,10 @@ The service ranks indexed memories using simple keyword overlap and returns the 
 
 Use the exact `blobId` returned by a successful store operation.
 
+## Dashboard state visibility
+
+`GET /api/walrus/state` is intended for the developer console and returns demo/dashboard memories, not agent-owned memory content. Agent-owned memories are retrieved through the authenticated recall endpoint.
+
 ## Authentication
 
 Configure agent keys as described in [Agent API authentication](AUTHENTICATION.md). In production, the store and recall endpoints fail closed with HTTP 503 if `RECALLLOOP_API_KEYS` is not configured. Keep keys in deployment secrets, not in the browser or repository. This protection currently covers only the store and recall endpoints; other dashboard/control routes remain outside this middleware.
