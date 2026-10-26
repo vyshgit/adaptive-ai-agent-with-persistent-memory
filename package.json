@@ -9,7 +9,8 @@
     "test:auth": "node --test tests/agent-auth.test.mjs",
     "test:visibility": "node --test tests/memory-visibility.test.mjs",
     "test:admin-auth": "node --test tests/admin-auth.test.mjs",
-    "test:retrieval": "node --test tests/memory-retrieval.test.mjs"
+    "test:retrieval": "node --test tests/memory-retrieval.test.mjs tests/retrieval-benchmark.test.mjs",
+    "benchmark:retrieval": "node scripts/retrieval-benchmark.mjs"
   },
   "dependencies": {
     "@mysten-incubation/memwal": "^0.1.10",
