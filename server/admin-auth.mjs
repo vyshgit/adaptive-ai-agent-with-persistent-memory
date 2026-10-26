@@ -20,7 +20,7 @@ export function authenticateAdmin(req, res, next) {
   if (expected.length < 32) {
     return res.status(500).json({ success: false, error: 'RECALLLOOP_ADMIN_API_KEY must contain at least 32 characters.' })
   }
-  const match = /^Bearer ([^\\s]+)$/.exec(req.get('authorization') || '')
+  const match = /^Bearer ([^\s]+)$/.exec(req.get('authorization') || '')
   if (!match || !safeEqual(match[1], expected)) {
     res.set('WWW-Authenticate', 'Bearer')
     return res.status(401).json({ success: false, error: 'A valid admin API key is required.' })
