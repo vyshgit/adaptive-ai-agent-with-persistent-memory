@@ -1,0 +1,17 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, fix/walrus-write-integrity]
+  pull_request:
+
+jobs:
+  memory-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test durable memory index
+        run: npm run test:memory
