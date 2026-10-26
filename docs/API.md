@@ -38,7 +38,7 @@ A successful response includes `memory.blobId`, the Walrus blob identifier. Keep
 }
 ```
 
-The prototype ranks indexed memories using simple keyword overlap and returns the highest-scoring matches. A query with no matching terms returns an empty list.
+The service ranks indexed memories using simple keyword overlap and returns the highest-scoring matches. A query with no matching terms returns an empty list. The metadata index is written to `data/memories.json` by default; set `RECALLLOOP_DATA_DIR` to a persistent writable volume path in deployment.
 
 ## Retrieve a known blob
 
@@ -55,4 +55,4 @@ Use the exact `blobId` returned by a successful store operation.
 
 ## Next implementation milestone
 
-Replace the process-local metadata index with a durable index that maps `agentId` to Walrus blob IDs and metadata. Then add semantic retrieval, automated restart-persistence tests, and API authentication. A useful acceptance test is: store a memory, restart the server, and retrieve it using the same agent ID and a related query.
+Move the file-backed index to a managed database/object index suitable for multiple instances. Then add semantic retrieval, end-to-end restart-persistence tests against Walrus, and API authentication. A useful acceptance test is: store a memory, restart the server, and retrieve it using the same agent ID and a related query.
