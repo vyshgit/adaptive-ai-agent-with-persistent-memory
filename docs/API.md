@@ -52,13 +52,13 @@ Use the exact `blobId` returned by a successful store operation.
 
 ## Authentication
 
-Configure agent keys as described in [Agent API authentication](AUTHENTICATION.md). In production, the store and recall endpoints fail closed with HTTP 503 if `RECALLLOOP_API_KEYS` is not configured. Keep keys in deployment secrets, not in the browser or repository. This protection currently covers only the store and recall endpoints; other dashboard/control routes remain outside this middleware.
+Configure agent and admin keys as described in [API authentication](AUTHENTICATION.md). In production, store/recall fail closed if `RECALLLOOP_API_KEYS` is missing, and dashboard/control routes fail closed if `RECALLLOOP_ADMIN_API_KEY` is missing. Keep both keys in deployment secrets, never in browser code or the repository. The dashboard needs a trusted reverse proxy or a proper session-based admin login in production; do not embed the admin key in the frontend.
 
 ## Current limitations (important)
 
 - **The metadata index is file-backed, not a managed database.** It survives process restarts when the data directory is retained. Container filesystems may be ephemeral, so set `RECALLLOOP_DATA_DIR` to a persistent mounted volume in deployment. This prototype index is intended for a single server process; it does not coordinate concurrent writes across multiple server instances.
 - Recall is lexical, not semantic. MemWal is installed but not yet integrated into this retrieval path.
-- Agent API authentication is implemented for the store and recall endpoints only. The remaining dashboard/control routes (including task outcomes, plan generation, slice execution, dashboard state, and blob retrieval) are not all protected by the agent-key middleware. Do not expose this as a public multi-tenant service until route-by-route authorization, rate limits, and operational controls are implemented.
+- Agent API authentication covers store/recall, and separate admin-key authentication covers dashboard state, blob retrieval, task outcomes, plan generation, and slice execution. Rate limiting, session-based dashboard login, audit logs, and managed multi-instance key storage are not implemented; do not treat this prototype as production-ready.
 - This is a prototype contract, not a production SLA. Configure the publisher and aggregator for the same Walrus network.
 
 ## Next implementation milestone
