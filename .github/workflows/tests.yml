@@ -29,3 +29,5 @@ jobs:
         run: npm run evaluate:retrieval
       - name: Test vector retrieval candidate interface
         run: npm run test:vector-candidate
+      - name: Test OpenAI embedding provider adapter
+        run: npm run test:embedding-provider
