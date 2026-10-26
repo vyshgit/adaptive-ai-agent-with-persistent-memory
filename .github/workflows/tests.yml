@@ -27,3 +27,5 @@ jobs:
         run: npm run benchmark:retrieval
       - name: Evaluate retrieval paraphrases and hard negatives
         run: npm run evaluate:retrieval
+      - name: Test vector retrieval candidate interface
+        run: npm run test:vector-candidate
