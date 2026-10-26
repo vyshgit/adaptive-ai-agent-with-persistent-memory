@@ -21,3 +21,5 @@ jobs:
         run: npm run test:visibility
       - name: Test admin API authentication
         run: npm run test:admin-auth
+      - name: Test retrieval
+        run: npm run test:retrieval
