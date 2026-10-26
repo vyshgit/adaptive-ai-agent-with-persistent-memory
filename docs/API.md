@@ -46,6 +46,10 @@ The service ranks indexed memories using simple keyword overlap and returns the 
 
 Use the exact `blobId` returned by a successful store operation.
 
+## Authentication
+
+Configure agent keys as described in [Agent API authentication](AUTHENTICATION.md). In production, the store and recall endpoints fail closed with HTTP 503 if `RECALLLOOP_API_KEYS` is not configured. Keep keys in deployment secrets, not in the browser or repository. This protection currently covers only the store and recall endpoints; other dashboard/control routes remain outside this middleware.
+
 ## Current limitations (important)
 
 - **The metadata index is file-backed, not a managed database.** It survives process restarts when the data directory is retained. Container filesystems may be ephemeral, so set `RECALLLOOP_DATA_DIR` to a persistent mounted volume in deployment. This prototype index is intended for a single server process; it does not coordinate concurrent writes across multiple server instances.
