@@ -6,6 +6,7 @@ export function createOpenAIEmbeddingProvider({
   model = process.env.RECALLLOOP_EMBEDDING_MODEL || DEFAULT_MODEL,
   dimensions = Number(process.env.RECALLLOOP_EMBEDDING_DIMENSIONS || DEFAULT_DIMENSIONS),
   baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  timeoutMs = Number(process.env.RECALLLOOP_EMBEDDING_TIMEOUT_MS || 15000),
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (!apiKey) throw new Error('OPENAI_API_KEY is required for vector retrieval evaluation')
@@ -13,11 +14,15 @@ export function createOpenAIEmbeddingProvider({
   if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > 2048) {
     throw new Error('Embedding dimensions must be an integer between 1 and 2048')
   }
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) {
+    throw new Error('Embedding timeout must be an integer between 1 and 120000 milliseconds')
+  }
 
   return async function embed(text) {
     if (typeof text !== 'string' || !text.trim()) throw new TypeError('Embedding input must be a non-empty string')
     const response = await fetchImpl(`${baseURL.replace(/\/$/, '')}/embeddings`, {
       method: 'POST',
+      signal: AbortSignal.timeout(timeoutMs),
       headers: {
         authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',
