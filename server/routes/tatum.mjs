@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { tatumApiBase } from '../tatum-client.mjs'
+import { tatumApiBase, tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
 
@@ -15,17 +15,19 @@ router.get('/status', async (_req, res) => {
   }
 })
 
-// Add Tatum routes here. tatumFetch for the REST / Data API, tatumRpc for a chain's
-// JSON-RPC gateway; both add the x-api-key header and pick the right host. Never
-// write api.tatum.io or api.tatum.dev into a route. No @tatumio/tatum SDK.
-//
-// Both throw MissingApiKeyError when the workspace has no key — surface it, don't retry.
-//
-//   import { tatumFetch, tatumRpc, MissingApiKeyError } from '../tatum-client.mjs'
-//
-//   const r = await tatumFetch('/v3/tatum/rate/BTC?basePair=USD')
-//   const rpc = await tatumRpc('ethereum', {
-//     jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1,
-//   })
+// Read-only Tatum API request route keeping API key strictly server-side
+router.get('/version', async (_req, res) => {
+  try {
+    const response = await tatumFetch('/v3/tatum/version')
+    const data = await response.json()
+    res.json({ success: true, data })
+  } catch (error) {
+    if (error instanceof MissingApiKeyError) {
+      res.status(503).json({ success: false, status: 'no-api-key', error: error.message })
+    } else {
+      res.status(500).json({ success: false, error: error.message })
+    }
+  }
+})
 
 export default router
