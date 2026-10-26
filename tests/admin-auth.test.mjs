@@ -24,6 +24,11 @@ test('rejects missing or incorrect admin bearer keys', () => {
   assert.equal(invoke({ env: { RECALLLOOP_ADMIN_API_KEY: secret } }).statusCode, 401)
   assert.equal(invoke({ env: { RECALLLOOP_ADMIN_API_KEY: secret }, headers: { authorization: 'Bearer wrong' } }).statusCode, 401)
 })
+test('rejects malformed bearer headers containing whitespace in the token', () => {
+  const r = invoke({ env: { RECALLLOOP_ADMIN_API_KEY: secret }, headers: { authorization: 'Bearer bad token' } })
+  assert.equal(r.statusCode, 401)
+  assert.equal(r.nextCalled, false)
+})
 test('accepts the configured admin key', () => {
   const r = invoke({ env: { RECALLLOOP_ADMIN_API_KEY: secret }, headers: { authorization: `Bearer ${secret}` } })
   assert.equal(r.nextCalled, true)
