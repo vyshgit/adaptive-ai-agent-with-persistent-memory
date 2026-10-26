@@ -19,7 +19,7 @@ test('memory index persists records across reloads and serializes concurrent wri
       id: `memory-${i}`,
       blobId: `blob-${i}`,
       agentId: 'agent-a',
-      title: `Experience ${i}',
+      title: `Experience ${i}`,
       timestamp: new Date().toISOString()
     })))
 
