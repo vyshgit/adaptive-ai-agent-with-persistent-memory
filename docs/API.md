@@ -58,9 +58,9 @@ Configure agent keys as described in [Agent API authentication](AUTHENTICATION.m
 
 - **The metadata index is file-backed, not a managed database.** It survives process restarts when the data directory is retained. Container filesystems may be ephemeral, so set `RECALLLOOP_DATA_DIR` to a persistent mounted volume in deployment. This prototype index is intended for a single server process; it does not coordinate concurrent writes across multiple server instances.
 - Recall is lexical, not semantic. MemWal is installed but not yet integrated into this retrieval path.
-- The API does not yet authenticate callers or enforce per-agent access control. Run it only in a trusted development environment; do not expose it as a public multi-tenant service until authentication, authorization, rate limits, and request-size limits are implemented.
+- Agent API authentication is implemented for the store and recall endpoints only. The remaining dashboard/control routes (including task outcomes, plan generation, slice execution, dashboard state, and blob retrieval) are not all protected by the agent-key middleware. Do not expose this as a public multi-tenant service until route-by-route authorization, rate limits, and operational controls are implemented.
 - This is a prototype contract, not a production SLA. Configure the publisher and aggregator for the same Walrus network.
 
 ## Next implementation milestone
 
-Move the file-backed index to a managed database/object index suitable for multiple instances. Then add semantic retrieval, end-to-end restart-persistence tests against Walrus, and API authentication. A useful acceptance test is: store a memory, restart the server, and retrieve it using the same agent ID and a related query.
+Move the file-backed index to a managed database/object index suitable for multiple instances. Then add semantic retrieval and an end-to-end restart-persistence test against Walrus. Authentication is already present for store/recall, but other routes still need authorization. A useful acceptance test is: store a memory, restart the server, and retrieve it using the same agent ID and a related query.
