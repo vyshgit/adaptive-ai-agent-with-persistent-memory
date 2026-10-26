@@ -13,6 +13,7 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import tatumRoutes from './routes/tatum.mjs'
+import walrusRoutes from './routes/walrus.mjs'
 import { credentialGuard } from './credential-guard.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -31,6 +32,7 @@ app.use(express.json())
 app.use(credentialGuard)
 
 app.use('/api/tatum', tatumRoutes)
+app.use('/api/walrus', walrusRoutes)
 
 const server = createHttpServer(app)
 
