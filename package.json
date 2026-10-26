@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node server/index.mjs",
     "test": "node --test",
-    "test:memory": "node --test tests/memory-index.test.mjs",
+    "test:memory": "node --test tests/memory-index.test.mjs tests/memory-index-process-restart.test.mjs",
     "test:auth": "node --test tests/agent-auth.test.mjs",
     "test:visibility": "node --test tests/memory-visibility.test.mjs",
     "test:admin-auth": "node --test tests/admin-auth.test.mjs"
