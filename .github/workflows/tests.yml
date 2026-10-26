@@ -15,3 +15,5 @@ jobs:
           node-version: 20
       - name: Test durable memory index
         run: npm run test:memory
+      - name: Test agent API authentication
+        run: npm run test:auth
