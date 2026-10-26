@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { MemWal } from '@mysten-incubation/memwal'
 import { loadMemories, persistMemory } from '../memory-index.mjs'
+import { isDashboardVisibleMemory } from '../memory-visibility.mjs'
 import { authenticateAgent } from '../agent-auth.mjs'
 import { tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
@@ -184,7 +185,7 @@ router.get('/state', (_req, res) => {
     sdk: getSdkStatus(),
     // The dashboard state endpoint is not an agent API. Never expose agent-owned
     // memory content here; agent memories are available only through authenticated recall.
-    memories: localMemories.filter(memory => !memory.agentId || memory.agentId === 'recallloop-dashboard'),
+    memories: localMemories.filter(isDashboardVisibleMemory),
     hypotheses: activeHypotheses,
     policy: currentPolicy,
     plan: activePlan
