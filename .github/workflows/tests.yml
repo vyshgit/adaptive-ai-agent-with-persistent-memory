@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, fix/walrus-write-integrity]
+  pull_request:
+
+jobs:
+  memory-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test durable memory index
+        run: npm run test:memory
+      - name: Test agent API authentication
+        run: npm run test:auth
+      - name: Test dashboard memory visibility
+        run: npm run test:visibility
+      - name: Test admin API authentication
+        run: npm run test:admin-auth
+      - name: Test retrieval
+        run: npm run test:retrieval
+      - name: Run lexical retrieval benchmark
+        run: npm run benchmark:retrieval
+      - name: Evaluate retrieval paraphrases and hard negatives
+        run: npm run evaluate:retrieval
+      - name: Test vector retrieval candidate interface
+        run: npm run test:vector-candidate
+      - name: Test OpenAI embedding provider adapter
+        run: npm run test:embedding-provider

@@ -93,6 +93,7 @@ export default function App() {
   const [plan, setPlan] = useState<PlanTask[]>([])
   const [publisherUrl, setPublisherUrl] = useState('')
   const [aggregatorUrl, setAggregatorUrl] = useState('')
+  const [walrusNetwork, setWalrusNetwork] = useState('testnet')
   const [sdkInfo, setSdkInfo] = useState<any>(null)
   const [suiCheckpoint, setSuiCheckpoint] = useState<any>(null)
 
@@ -141,6 +142,7 @@ export default function App() {
         setPlan(data.plan || [])
         setPublisherUrl(data.publisherUrl || '')
         setAggregatorUrl(data.aggregatorUrl || '')
+        setWalrusNetwork(data.network || 'unknown')
         setSdkInfo(data.sdk || null)
       }
 
@@ -272,6 +274,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          agentId: 'recallloop-dashboard',
           title: newMemTitle,
           taskTitle: newMemTask,
           outcome: newMemOutcome,
@@ -750,8 +753,12 @@ export default function App() {
                 </span>
               </div>
               <div className="flex justify-between">
+                <span>Configured network:</span>
+                <span className="font-semibold text-utility-brand-700">{walrusNetwork}</span>
+              </div>
+              <div className="flex justify-between">
                 <span>Publisher Node:</span>
-                <span className="font-mono text-tertiary text-xs">nodes.guru</span>
+                <span className="font-mono text-tertiary text-xs">{publisherUrl.includes('nodes.guru') ? 'nodes.guru' : 'custom endpoint'}</span>
               </div>
               <div className="flex justify-between">
                 <span>Aggregator Node:</span>
@@ -768,8 +775,8 @@ export default function App() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Decentralized Recall:</span>
-                <span className="font-semibold text-utility-success-700">Verified</span>
+                <span>Blob retrieval:</span>
+                <span className="font-semibold text-primary">On demand</span>
               </div>
             </div>
 

@@ -1,6 +1,10 @@
 import { Router } from 'express'
-import crypto from 'crypto'
 import { MemWal } from '@mysten-incubation/memwal'
+import { loadMemories, persistMemory } from '../memory-index.mjs'
+import { isDashboardVisibleMemory } from '../memory-visibility.mjs'
+import { authenticateAgent } from '../agent-auth.mjs'
+import { authenticateAdmin } from '../admin-auth.mjs'
+import { retrieveMemories } from '../memory-retrieval.mjs'
 import { tatumFetch, MissingApiKeyError } from '../tatum-client.mjs'
 
 const router = Router()
@@ -8,6 +12,9 @@ const router = Router()
 // Walrus Publishers & Aggregators
 const WALRUS_PUBLISHER = process.env.WALRUS_PUBLISHER_URL || 'https://walrus-testnet-publisher.nodes.guru'
 const WALRUS_AGGREGATOR = process.env.WALRUS_AGGREGATOR_URL || 'https://walrus-testnet-aggregator.nodes.guru'
+// These default endpoints are Testnet. Set WALRUS_NETWORK and both endpoint URLs
+// together if deliberately switching networks.
+const WALRUS_NETWORK = process.env.WALRUS_NETWORK || 'testnet'
 const MEMWAL_RELAYER_URL = process.env.MEMWAL_RELAYER_URL || 'https://relayer.memory.walrus.xyz'
 const MEMWAL_DELEGATE_KEY = process.env.MEMWAL_DELEGATE_KEY
 const MEMWAL_ACCOUNT_ID = process.env.MEMWAL_ACCOUNT_ID
@@ -28,7 +35,7 @@ function getSdkStatus() {
 }
 
 // Initial verified bootstrap memories stored on Walrus Mainnet/Testnet
-let localMemories = [
+const bootstrapMemories = [
   {
     id: 'mem_init_01',
     blobId: '2uN5yCl_YqaqtHlxIXlWYwJCihI1mPU2aJqHwiGf8HM',
@@ -60,6 +67,10 @@ let localMemories = [
     walrusEpoch: 562
   }
 ]
+
+// Demo memories remain visible in the developer console; only real agent writes
+// are stored in the durable index and eligible for agent-scoped recall.
+let localMemories = [...await loadMemories(), ...bootstrapMemories]
 
 let activeHypotheses = [
   {
@@ -168,12 +179,15 @@ let activePlan = [
 ]
 
 // GET /api/walrus/state
-router.get('/state', (_req, res) => {
+router.get('/state', authenticateAdmin, (_req, res) => {
   res.json({
     publisherUrl: WALRUS_PUBLISHER,
     aggregatorUrl: WALRUS_AGGREGATOR,
+    network: WALRUS_NETWORK,
     sdk: getSdkStatus(),
-    memories: localMemories,
+    // The dashboard state endpoint is not an agent API. Never expose agent-owned
+    // memory content here; agent memories are available only through authenticated recall.
+    memories: localMemories.filter(isDashboardVisibleMemory),
     hypotheses: activeHypotheses,
     policy: currentPolicy,
     plan: activePlan
@@ -181,31 +195,43 @@ router.get('/state', (_req, res) => {
 })
 
 // POST /api/walrus/store - Store a memory directly to Walrus Memory
-router.post('/store', async (req, res) => {
+router.post('/store', authenticateAgent, async (req, res) => {
   try {
-    const { title, taskTitle, outcome, feedback, plannedDurationMinutes, lesson } = req.body
+    const { agentId, title, taskTitle, outcome, feedback, plannedDurationMinutes, lesson, metadata } = req.body
+    const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
+
+    if (!normalizedAgentId || normalizedAgentId.length > 128) {
+      return res.status(400).json({ success: false, error: 'agentId is required and must be at most 128 characters.' })
+    }
+    if (outcome !== undefined && !['completed', 'postponed', 'failed', 'neutral'].includes(outcome)) {
+      return res.status(400).json({ success: false, error: 'Invalid outcome. Expected completed, postponed, failed, or neutral.' })
+    }
+    if (metadata !== undefined && (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata))) {
+      return res.status(400).json({ success: false, error: 'metadata must be a JSON object when provided.' })
+    }
 
     const memoryPayload = {
       type: 'agent_experience_memory',
-      version: '1.0',
+      schemaVersion: '1.1',
       timestamp: new Date().toISOString(),
-      agent: 'RecallLoop-v1',
+      agentId: normalizedAgentId,
       data: {
         title: title || 'Task Experience Record',
         taskTitle: taskTitle || 'Unspecified task',
         outcome: outcome || 'neutral',
         feedback: feedback || '',
-        plannedDurationMinutes: plannedDurationMinutes || 25,
-        lesson: lesson || 'Observed task behaviour and captured result.'
+        plannedDurationMinutes: Number.isFinite(Number(plannedDurationMinutes)) && Number(plannedDurationMinutes) > 0 ? Number(plannedDurationMinutes) : 25,
+        lesson: lesson || 'Observed task behaviour and captured result.',
+        metadata: metadata || {}
       }
     }
 
     const payloadString = JSON.stringify(memoryPayload, null, 2)
 
     // Store in Walrus Publisher
-    let walrusBlobId = 'walrus_' + crypto.randomBytes(8).toString('hex')
+    let walrusBlobId = null
     let walrusResult = null
-    let walrusEpoch = 562
+    let walrusEpoch = null
 
     try {
       const response = await fetch(`${WALRUS_PUBLISHER}/v1/blobs?epochs=1`, {
@@ -217,25 +243,23 @@ router.post('/store', async (req, res) => {
         signal: AbortSignal.timeout(12000)
       })
 
-      if (response.ok) {
-        walrusResult = await response.json()
-        if (walrusResult.newlyCreated?.blobObject?.blobId) {
-          walrusBlobId = walrusResult.newlyCreated.blobObject.blobId
-          walrusEpoch = walrusResult.newlyCreated.blobObject.registeredEpoch || 562
-        } else if (walrusResult.alreadyCertified?.blobId) {
-          walrusBlobId = walrusResult.alreadyCertified.blobId
-        }
-      } else {
-        console.warn('Walrus publisher response status:', response.status)
+      if (!response.ok) {
+        const details = await response.text()
+        return res.status(502).json({ success: false, error: 'Walrus publisher rejected the memory write', status: response.status, details })
       }
+      walrusResult = await response.json()
+      walrusBlobId = walrusResult.newlyCreated?.blobObject?.blobId || walrusResult.alreadyCertified?.blobId || null
+      walrusEpoch = walrusResult.newlyCreated?.blobObject?.registeredEpoch ?? null
+      if (!walrusBlobId) return res.status(502).json({ success: false, error: 'Walrus publisher returned no certified blob ID; memory was not recorded locally.' })
     } catch (err) {
-      console.warn('Walrus publisher call failed, fallback to local identifier:', err.message)
+      return res.status(502).json({ success: false, error: 'Walrus memory write failed; memory was not recorded locally.', details: err.message })
     }
 
     const newMemory = {
       id: 'mem_' + Date.now(),
       blobId: walrusBlobId,
-      storageType: walrusResult ? 'walrus_certified' : 'walrus_buffered',
+      agentId: normalizedAgentId,
+      storageType: 'walrus_certified',
       sessionNumber: localMemories.length + 1,
       type: 'lesson',
       title: memoryPayload.data.title,
@@ -244,10 +268,16 @@ router.post('/store', async (req, res) => {
       outcome: memoryPayload.data.outcome,
       feedback: memoryPayload.data.feedback,
       lesson: memoryPayload.data.lesson,
+      metadata: memoryPayload.data.metadata,
       timestamp: memoryPayload.timestamp,
       walrusEpoch
     }
 
+    try {
+      await persistMemory(newMemory)
+    } catch (indexError) {
+      return res.status(500).json({ success: false, error: 'Walrus stored the blob, but the durable memory index could not be updated.', details: indexError.message, blobId: walrusBlobId })
+    }
     localMemories.unshift(newMemory)
 
     res.json({
@@ -260,8 +290,34 @@ router.post('/store', async (req, res) => {
   }
 })
 
+
+// POST /api/walrus/recall - Retrieve agent-scoped memories using lightweight lexical ranking.
+// Memory metadata is loaded from the file-backed index at startup. Persistence across
+// restarts depends on RECALLLOOP_DATA_DIR pointing at retained storage.
+router.post('/recall', authenticateAgent, (req, res) => {
+  const { agentId, query, limit = 5 } = req.body || {}
+  const normalizedAgentId = typeof agentId === 'string' ? agentId.trim() : ''
+  const normalizedQuery = typeof query === 'string' ? query.trim() : ''
+
+  if (!normalizedAgentId || normalizedAgentId.length > 128) {
+    return res.status(400).json({ success: false, error: 'agentId is required and must be at most 128 characters.' })
+  }
+  if (!normalizedQuery) {
+    return res.status(400).json({ success: false, error: 'query is required.' })
+  }
+
+  const memories = retrieveMemories(localMemories, normalizedAgentId, normalizedQuery, limit)
+  return res.json({
+    success: true,
+    agentId: normalizedAgentId,
+    query: normalizedQuery,
+    retrieval: { strategy: 'lexical', indexDurability: 'file-backed', semanticSearch: false },
+    memories
+  })
+})
+
 // GET /api/walrus/blob/:blobId - Fetch raw content from Walrus Aggregator
-router.get('/blob/:blobId', async (req, res) => {
+router.get('/blob/:blobId', authenticateAdmin, async (req, res) => {
   const { blobId } = req.params
 
   // Validate blobId format: Walrus blob IDs are base64url or hex strings, never internal names
@@ -301,7 +357,7 @@ router.get('/blob/:blobId', async (req, res) => {
 })
 
 // POST /api/walrus/task/outcome - Record task outcome, adapt hypotheses & policy
-router.post('/task/outcome', async (req, res) => {
+router.post('/task/outcome', authenticateAdmin, async (req, res) => {
   try {
     const { taskId, outcome, feedback, outcomeReason } = req.body
 
@@ -311,10 +367,9 @@ router.post('/task/outcome', async (req, res) => {
     }
 
     const task = activePlan[taskIndex]
-    task.status = outcome // 'completed' | 'postponed' | 'failed'
-    task.feedback = feedback || ''
-    task.outcomeReason = outcomeReason || ''
-    task.completedAt = new Date().toISOString()
+    if (!['completed', 'postponed', 'failed'].includes(outcome)) {
+      return res.status(400).json({ error: 'Invalid outcome. Expected completed, postponed, or failed.' })
+    }
 
     // 1. Synthesize explicit lesson
     let lesson = ''
@@ -327,8 +382,8 @@ router.post('/task/outcome', async (req, res) => {
     }
 
     // 2. Persist lesson to Walrus Memory
-    let walrusBlobId = 'walrus_' + crypto.randomBytes(8).toString('hex')
-    let walrusEpoch = 562
+    let walrusBlobId = null
+    let walrusEpoch = null
 
     try {
       const memoryPayload = {
@@ -353,22 +408,22 @@ router.post('/task/outcome', async (req, res) => {
         signal: AbortSignal.timeout(12000)
       })
 
-      if (response.ok) {
-        const result = await response.json()
-        if (result.newlyCreated?.blobObject?.blobId) {
-          walrusBlobId = result.newlyCreated.blobObject.blobId
-          walrusEpoch = result.newlyCreated.blobObject.registeredEpoch || 562
-        } else if (result.alreadyCertified?.blobId) {
-          walrusBlobId = result.alreadyCertified.blobId
-        }
+      if (!response.ok) {
+        const details = await response.text()
+        return res.status(502).json({ success: false, error: 'Walrus rejected the task-outcome memory write; task state was not updated.', status: response.status, details })
       }
+      const result = await response.json()
+      walrusBlobId = result.newlyCreated?.blobObject?.blobId || result.alreadyCertified?.blobId || null
+      walrusEpoch = result.newlyCreated?.blobObject?.registeredEpoch ?? null
+      if (!walrusBlobId) return res.status(502).json({ success: false, error: 'Walrus returned no certified blob ID; task state was not updated.' })
     } catch (e) {
-      console.warn('Walrus persist failed during outcome reporting:', e.message)
+      return res.status(502).json({ success: false, error: 'Walrus task-outcome memory write failed; task state was not updated.', details: e.message })
     }
 
     const recordedMemory = {
       id: 'mem_' + Date.now(),
       blobId: walrusBlobId,
+      agentId: 'recallloop-dashboard',
       storageType: 'walrus_certified',
       sessionNumber: localMemories.length + 1,
       type: 'lesson',
@@ -381,7 +436,18 @@ router.post('/task/outcome', async (req, res) => {
       timestamp: new Date().toISOString(),
       walrusEpoch
     }
+    try {
+      await persistMemory(recordedMemory)
+    } catch (indexError) {
+      return res.status(500).json({ success: false, error: 'Walrus stored the outcome blob, but the durable memory index could not be updated.', details: indexError.message, blobId: walrusBlobId })
+    }
     localMemories.unshift(recordedMemory)
+
+    // Mutate task state only after both Walrus and the durable index succeeded.
+    task.status = outcome
+    task.feedback = feedback || ''
+    task.outcomeReason = outcomeReason || ''
+    task.completedAt = new Date().toISOString()
 
     // 3. Update Hypotheses Bayesian confidence
     if (task.durationMinutes <= 35) {
@@ -441,7 +507,7 @@ router.post('/task/outcome', async (req, res) => {
 })
 
 // POST /api/walrus/plan/generate - Generate/adapt plan using memory & hypotheses
-router.post('/plan/generate', async (req, res) => {
+router.post('/plan/generate', authenticateAdmin, async (req, res) => {
   try {
     const { goal, constraints } = req.body
 
@@ -529,7 +595,7 @@ router.post('/plan/generate', async (req, res) => {
 })
 
 // POST /api/walrus/slice/run - Execute smallest verified end-to-end slice
-router.post('/slice/run', async (_req, res) => {
+router.post('/slice/run', authenticateAdmin, async (_req, res) => {
   const auditReport = {
     step1_write: null,
     step2_confirm: null,
@@ -559,7 +625,8 @@ router.post('/slice/run', async (_req, res) => {
 
     const putData = await putRes.json()
     const blobId = putData.newlyCreated?.blobObject?.blobId || putData.alreadyCertified?.blobId
-    const registeredEpoch = putData.newlyCreated?.blobObject?.registeredEpoch || 562
+    const registeredEpoch = putData.newlyCreated?.blobObject?.registeredEpoch ?? null
+    if (!blobId) throw new Error('Walrus publisher returned no certified blob ID.')
 
     auditReport.step1_write = {
       status: 'confirmed',

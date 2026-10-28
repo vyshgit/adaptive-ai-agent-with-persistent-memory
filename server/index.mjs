@@ -26,7 +26,7 @@ const root = path.join(__dirname, '..')
 process.chdir(root)
 
 const app = express()
-app.use(express.json())
+app.use(express.json({ limit: '32kb' }))
 
 // Redact the Tatum API key from every response before it leaves the process.
 app.use(credentialGuard)
