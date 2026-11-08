@@ -4,6 +4,7 @@
 //
 // Env is read per call, not at import: credentials-store.mjs rewrites process.env when
 // the user changes their key.
+import { readLimitedText } from './agent/sse.mjs'
 
 export class MissingApiKeyError extends Error {
   constructor() {
@@ -60,4 +61,24 @@ export async function tatumRpc(chain, body, network = 'mainnet') {
     headers: withKey({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
+}
+
+// The live Sui Mainnet discovery currently advertises HTTP GraphQL.
+export async function tatumSuiGraphql(query, variables = {}, options = {}) {
+  // An explicitly supplied key (even empty) MUST NOT fall back to the owner environment.
+  const key = Object.hasOwn(options, 'apiKey') ? options.apiKey : apiKey()
+  if (!key) throw new MissingApiKeyError()
+  const url = Object.hasOwn(options, 'apiKey') ? 'https://sui-mainnet.gateway.tatum.io/graphql' : `${tatumGatewayUrl('sui', 'mainnet')}/graphql`
+  const response = await fetch(url, {
+    method: 'POST',
+    signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
+    redirect: 'error',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+    body: JSON.stringify({ query, variables }),
+  })
+  if (!response.ok) throw new Error(`Tatum Sui GraphQL HTTP ${response.status}`)
+  const text = await readLimitedText(response, 100_000)
+  const payload = JSON.parse(text)
+  if (!payload.data || payload.errors?.length) throw new Error('Tatum Sui GraphQL returned an error')
+  return payload.data
 }

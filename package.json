@@ -1,11 +1,23 @@
 {
-  "name": "my-tatum-app",
-  "version": "0.1.0",
+  "name": "recallloop",
+  "version": "0.2.0",
   "type": "module",
+  "private": true,
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+  },
   "scripts": {
-    "dev": "node server/index.mjs",
+    "dev": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.mjs",
+    "dev:demo": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.mjs --demo",
+    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/index.mjs --production",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
     "test": "node --test",
-    "test:memory": "node --test tests/memory-index.test.mjs tests/memory-index-process-restart.test.mjs",
+    "test:memory": "node --test tests/memory-*.test.mjs",
+    "test:agent": "node --test tests/agent-*.test.mjs",
+    "test:browser": "playwright test",
+    "demo:agent": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/memory-agent-demo.mjs",
+    "seed:memory": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/seed-mainnet-memories.mjs",
     "test:auth": "node --test tests/agent-auth.test.mjs",
     "test:visibility": "node --test tests/memory-visibility.test.mjs",
     "test:admin-auth": "node --test tests/admin-auth.test.mjs",
@@ -18,15 +30,19 @@
   },
   "dependencies": {
     "@mysten-incubation/memwal": "^0.1.10",
-    "@vitejs/plugin-react": "^4.3.1",
-    "express": "^4.21.0",
+    "@mysten/sui": "^2.37.0",
+    "@mysten/wallet-standard": "^0.21.35",
+    "@vitejs/plugin-react": "^5.2.0",
+    "@wallet-standard/app": "^1.1.1",
+    "express": "^4.22.3",
     "lucide-react": "^1.31.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "undici": "^7.0.0",
-    "vite": "5.4.21"
+    "undici": "^7.30.2",
+    "vite": "^7.3.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/express": "^4.17.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
