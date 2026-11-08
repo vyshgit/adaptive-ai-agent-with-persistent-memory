@@ -24,6 +24,10 @@ jobs:
       - run: npm run typecheck
       - name: Unit, HTTP, security, CLI, and legacy regression tests
         run: npm test
+      - name: Legacy lexical retrieval benchmark
+        run: npm run benchmark:retrieval
+      - name: Legacy paraphrase and hard-negative retrieval evaluation
+        run: npm run evaluate:retrieval
       - run: npm run build
       - name: Credential-free two-session recall loop
         run: npm run demo:agent

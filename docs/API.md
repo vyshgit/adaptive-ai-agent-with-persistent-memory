@@ -268,11 +268,62 @@ semantic retrieval or wallet namespaces.
 | POST | `/plan/generate` | Admin; legacy plan generation. |
 | POST | `/slice/run` | Admin; legacy workflow slice. |
 
+Legacy store example (send the configured agent bearer key as described in
+[authentication](AUTHENTICATION.md#external-agent-bearer-keys)):
+
+```json
+{
+  "agentId": "support-agent-prod",
+  "title": "Refund workflow timed out",
+  "taskTitle": "Process a refund request",
+  "outcome": "failed",
+  "feedback": "The provider timed out after the request was submitted.",
+  "plannedDurationMinutes": 5,
+  "lesson": "Check the provider's request status before retrying.",
+  "metadata": { "conversationId": "conv-123", "tags": ["payments", "timeout"] }
+}
+```
+
 A store must return a real blob ID or fail with HTTP 502. A subsequent local-index write
-can fail separately; preserve the returned blob ID for reconciliation. The existing index
-only survives where its directory is retained/writable; the preview has **no durable
-runtime filesystem**. New MemWal work does not write it. Legacy/vector evaluation tooling
-is parked research, not the workspace retrieval path.
+can fail separately; preserve the returned blob ID for reconciliation. A successful store
+returns `memory.blobId`; use that exact identifier when retrieving a known legacy blob.
+Use a stable, non-sensitive logical `agentId`, and configure publisher and aggregator for
+the same Walrus network.
+
+The legacy index defaults to `data/memories.json`; `RECALLLOOP_DATA_DIR` selects its
+directory. It only survives where that directory is retained and writable. The preview has
+**no durable runtime filesystem**. New MemWal work does not write this index. It is intended
+for one server process, not coordinated multi-instance writes.
+
+### Parked legacy retrieval experiments
+
+Legacy recall remains keyword-overlap ranking; queries with no matching terms return no
+hits. `npm run benchmark:retrieval` runs a small synthetic lexical smoke test.
+`npm run evaluate:retrieval` reports Recall@3, MRR, hard-negative rate, and cross-agent
+leakage on synthetic labelled paraphrases. Both commands are credential-free and remain
+in CI; expected paraphrase misses are a baseline, not a production quality claim.
+
+The injectable cosine-similarity candidate in `server/vector-retrieval-candidate.mjs` and
+OpenAI-compatible adapter in `server/openai-embedding-provider.mjs` are preserved research,
+not the legacy API or wallet workspace retrieval path. The optional
+`npm run evaluate:vector` uses separate operator environment configuration:
+
+| Variable | Purpose / default |
+| --- | --- |
+| `OPENAI_API_KEY` | Required embedding-provider credential; never commit it. |
+| `RECALLLOOP_EMBEDDING_MODEL` | `text-embedding-3-small`. |
+| `RECALLLOOP_EMBEDDING_DIMENSIONS` | 384. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1`. |
+| `RECALLLOOP_EMBEDDING_TIMEOUT_MS` | 15,000 milliseconds. |
+
+Vector evaluation sends query and memory text to the configured provider and incurs API
+usage costs. Run it only after explicit approval; do not use private or production content
+without the required data-processing approval. It is **not run in CI** and does not reuse
+browser credentials. The adapter rejects provider errors or invalid vectors/dimensions.
+Automated provider tests mock HTTP responses; controlled-vector tests establish mechanics
+only. Review real-model metrics, latency, and cost before integrating a semantic candidate.
+Synthetic checks and local-index restart tests are not proof of a live Walrus
+store/restart/recall flow or Mainnet durability.
 
 ## Errors and safety
 

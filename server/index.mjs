@@ -38,6 +38,7 @@ const root = path.join(__dirname, '..')
 process.chdir(root)
 
 const app = express()
+// Redact known credentials before route parsers or handlers can send an error.
 app.use(credentialGuard)
 
 const demo = process.argv.includes('--demo')

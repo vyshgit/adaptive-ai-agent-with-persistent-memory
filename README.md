@@ -149,11 +149,17 @@ Testnet-default publisher and file-backed lexical index. They are not wallet mem
 Mainnet evidence; the preview's local index is not durable. The Python
 [quickstart](examples/python/quickstart.py) still targets this legacy API. Retrieval/vector
 experiments remain parked, not the workspace's live retrieval backend.
+The legacy index directory is configurable through `RECALLLOOP_DATA_DIR`; retaining it
+requires writable, persistent self-hosted storage, which the preview does not provide.
+See [legacy retrieval experiments](docs/API.md#parked-legacy-retrieval-experiments) for the
+preserved benchmark/evaluation commands and their limits.
 
 ## Tests and CLI demos
 
 ```bash
 npm test
+npm run benchmark:retrieval
+npm run evaluate:retrieval
 npm run typecheck
 npm run build
 npm run demo:agent
@@ -167,6 +173,7 @@ npm run test:browser
 Linux environments with an existing Chromium may use
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser`.
 GitHub Actions is configured for Node 24.22.1/26.13.0 validation and a separate browser job.
+Both Node jobs also run the preserved, credential-free legacy retrieval checks.
 Browser tests use signed **synthetic** wallets and mocked credential responses, not live
 extension/provider authorization.
 
