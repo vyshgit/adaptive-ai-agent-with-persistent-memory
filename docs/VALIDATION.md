@@ -11,17 +11,18 @@ obtained on Linux with Node 26.13.0 and system Chromium.
 
 | Command | Observed result |
 | --- | --- |
-| `npm test` | **133 passed, 0 failed, 0 skipped**, including the pre-existing regression tests. |
+| `npm test` | **135 passed, 0 failed, 0 skipped**, including the pre-existing regression tests. |
 | `npm run typecheck` | Passed. |
 | `npm run build` | Passed; production React assets generated. |
-| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser` | **6 passed**. |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser` | **7 passed**. |
 | `npm run demo:agent` | Passed, isolated mock; first-session fact recalled in a new session, scripted review-only code proposal; no network/provider/Mainnet calls. |
 | `npm audit` | **0 vulnerabilities** reported for the installed dependency lockfile. Not a complete application security audit. |
 
-CI is configured to repeat unit/type/build/demo/audit checks with Node 24.22.1 and 26.13.0
-and run Chromium scenarios separately. That configuration is not a claim that hosted CI
-has already run successfully. Browser reports/screenshots/traces are generated under
-gitignored `.playwright/`, not submitted as live evidence.
+CI repeats unit/type/build/demo/audit checks with Node 24.22.1 and 26.13.0 and runs Chromium
+scenarios separately. The initial hosted run passed both Node jobs but exposed the reload
+regression described below; follow-up hosted CI must pass before merging. Browser reports,
+screenshots, and traces are generated under gitignored `.playwright/`, not submitted as
+live evidence.
 
 ### What the tests establish
 
@@ -38,7 +39,8 @@ gitignored `.playwright/`, not submitted as live evidence.
   bounded outputs, honest incomplete/error handling, no client impersonation, and redaction
   across arbitrary stream chunks.
 - Browser-only import/edit/export, reviewed proposals, exact patches (including `git apply
-  --check` fixtures), Stop/Retry, mobile layout/themes, and keyboard-accessible modals.
+  --check` fixtures), pending-cache navigation flushing, Stop/Retry, mobile layout/themes,
+  and keyboard-accessible modals.
 - CLI defaults/confirmation guards, network-free two-session flow, wallet namespace mapping,
   and evidence exports that refuse invalid proof or existing files.
 
@@ -50,10 +52,26 @@ gitignored `.playwright/`, not submitted as live evidence.
 4. Cross-tab wallet changes reject stale requests and restore the correct scoped project.
 5. Mobile panels/themes/settings at 390 px and 320 px without viewport overflow.
 6. Stop preserves a partial answer without capture; Retry avoids duplicate user submission.
+7. With autosave timers held pending, reload preserves the latest project and chat; hidden
+   visibility flushes subsequent edits. No sleep or increased assertion timeout masks the race.
 
 Synthetic browser wallets produce signatures that the real local server verifies.
 Credential-form responses are mocked: these checks **do not** establish real extension,
 Tatum, MemWal, or model-provider compatibility.
+
+### Reload regression follow-up
+
+The [initial hosted browser run](https://github.com/vyshgit/adaptive-ai-agent-with-persistent-memory/actions/runs/42491949674)
+passed five scenarios but failed the import/export reload check. React unmount cleanup does
+not run on browser navigation, so a reload before the 350 ms autosave could restore an older
+project. A deterministic local regression test reproduced that loss before the fix.
+
+Project and chat caches now synchronously flush their latest snapshots on `pagehide`, hidden
+`visibilitychange`, and component cleanup, while retaining debounced saves during editing.
+Unit tests verify redaction, wallet-bound callbacks, and removal of disposed listeners. The
+original import/reload scenario also holds autosave pending instead of waiting out the race.
+All 135 local tests and seven Chromium scenarios pass with this fix. CI failure-artifact
+upload now includes the hidden `.playwright/` report directory.
 
 ## Live manual validation
 

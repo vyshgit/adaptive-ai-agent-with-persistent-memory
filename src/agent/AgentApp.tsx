@@ -4,6 +4,7 @@ import type { WorkspaceStatus, MemoryOverview, Proposal, ChatMessage, WalletSess
 import type { ChainStatus } from './MemoryRail.tsx'
 import { agentJson } from './api.ts'
 import { applyProposal, loadProject, saveProject, contextCharacters, MAX_CONTEXT_CHARS } from './project.ts'
+import { flushCacheOnExit } from './clientSafety.ts'
 import { useAgentSession } from './useAgentSession.ts'
 import { Badge, Button, IconButton, Tabs } from './ui.tsx'
 import SessionSidebar from './SessionSidebar.tsx'
@@ -70,8 +71,8 @@ export default function AgentApp({ dark, onTheme, identity, onLogout }: { dark: 
   useEffect(() => {
     const timer = setTimeout(() => { if (!saveProject(project, undefined, scope)) setNotice('Browser project cache could not be saved. Download your edited files before leaving this page.') }, 350)
     return () => clearTimeout(timer)
-  }, [project])
-  useEffect(() => () => { saveProject(currentProject.current, undefined, scope) }, [])
+  }, [project, scope])
+  useEffect(() => flushCacheOnExit(() => { saveProject(currentProject.current, undefined, scope) }), [scope])
   useEffect(() => {
     if (!agent.busy && agent.activeSession.model && status?.llm.models.some(model => model.id === agent.activeSession.model)) setModel(agent.activeSession.model)
   }, [agent.activeSession.id, status?.llm.models])

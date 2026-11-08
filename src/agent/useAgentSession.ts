@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Session, ChatMessage, Project, Phase, AgentEvent, StoredCapture, WorkspaceMode } from './types.ts'
 import { createSession, loadSessions, saveSessions, clearSessionCache, MAX_SESSIONS, MAX_MESSAGES } from './sessionStore.ts'
-import { newId, redactBrowserText } from './clientSafety.ts'
+import { newId, redactBrowserText, flushCacheOnExit } from './clientSafety.ts'
 import { agentFetch, readAgentSse, responseError } from './api.ts'
 import { selectedProject } from './project.ts'
 
@@ -23,11 +23,12 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
   useEffect(() => {
     const timer = setTimeout(() => { if (!saveSessions(sessions, undefined, scope)) setCacheWarning('Local cache could not be saved. Keep this tab open or export your work. Walrus memories are unaffected.') }, 350)
     return () => clearTimeout(timer)
-  }, [sessions])
+  }, [sessions, scope])
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false; request.current?.abort(); saveSessions(current.current, undefined, scope) }
-  }, [])
+    const unbind = flushCacheOnExit(() => { saveSessions(current.current, undefined, scope) })
+    return () => { mounted.current = false; request.current?.abort(); unbind() }
+  }, [scope])
 
   function updateSession(id: string, update: (session: Session) => Session) {
     if (!mounted.current) return

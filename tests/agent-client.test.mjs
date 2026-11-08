@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { registerBrowserSecret, clearBrowserSecrets, redactBrowserText, scopedCacheKey } from '../src/agent/clientSafety.ts'
+import { registerBrowserSecret, clearBrowserSecrets, redactBrowserText, scopedCacheKey, flushCacheOnExit } from '../src/agent/clientSafety.ts'
 import { createSession, normaliseSessions, loadSessions, saveSessions, clearSessionCache, SESSION_KEY, MAX_SESSIONS, MAX_MESSAGES } from '../src/agent/sessionStore.ts'
 import { starterProject, normaliseProject, loadProject, saveProject, selectedProject, validFilePath, importTextFiles, applyProposal, PROJECT_KEY } from '../src/agent/project.ts'
 import { agentFetch, agentJson, readAgentSse, responseError, resetSessionSecrets, setSessionTag, setWorkspaceToken } from '../src/agent/api.ts'
@@ -28,6 +28,61 @@ test('browser session/project caches are wallet-scoped and do not migrate an uns
   assert.ok(cache.getItem(scopedCacheKey(PROJECT_KEY, 'wallet-first')), 'clearing history must not clear the browser project')
   assert.ok(cache.getItem(SESSION_KEY), 'an unrelated cache must not be removed')
   for (const scope of ['', '../wallet', 'wallet:other', 'x'.repeat(81)]) assert.throws(() => scopedCacheKey(SESSION_KEY, scope), /identity/)
+})
+
+test('browser cache lifecycle flushes latest snapshots on pagehide, hidden visibility and unmount, then removes listeners', () => {
+  const page = new EventTarget(), visibility = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+  const flushed = []
+  let latest = 'initial'
+  const unbind = flushCacheOnExit(() => { flushed.push(latest) }, page, visibility)
+  latest = 'before reload'
+  page.dispatchEvent(new Event('pagehide'))
+  visibility.dispatchEvent(new Event('visibilitychange'))
+  assert.deepEqual(flushed, ['before reload'], 'visible transitions must not force extra saves')
+  latest = 'before background'
+  visibility.visibilityState = 'hidden'
+  visibility.dispatchEvent(new Event('visibilitychange'))
+  latest = 'before unmount'
+  unbind()
+  assert.deepEqual(flushed, ['before reload', 'before background', 'before unmount'])
+  page.dispatchEvent(new Event('pagehide'))
+  visibility.dispatchEvent(new Event('visibilitychange'))
+  assert.equal(flushed.length, 3, 'disposed workspaces must not keep cache-exit listeners')
+})
+
+test('cache-exit flushing preserves redaction and wallet scopes without reviving disposed workspace snapshots', t => {
+  t.after(clearBrowserSecrets)
+  const page = new EventTarget(), visibility = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+  const cache = storage(), key = 'synthetic-cache-exit-secret-value'
+  registerBrowserSecret(key)
+  const firstProject = starterProject(), firstSession = createSession()
+  firstProject.files[0].content = key
+  firstSession.messages = [message({ content: key })]
+  const closeFirst = flushCacheOnExit(() => {
+    saveProject(firstProject, cache, 'wallet-first')
+    saveSessions([firstSession], cache, 'wallet-first')
+  }, page, visibility)
+  closeFirst() // Flush before WalletGate clears the previous wallet's redaction set.
+  const firstProjectKey = scopedCacheKey(PROJECT_KEY, 'wallet-first')
+  const firstSessionKey = scopedCacheKey(SESSION_KEY, 'wallet-first')
+  const savedProject = cache.getItem(firstProjectKey), savedSession = cache.getItem(firstSessionKey)
+  assert.equal(savedProject.includes(key), false)
+  assert.equal(savedSession.includes(key), false)
+  assert.ok(savedProject.includes('[REDACTED]'))
+  assert.ok(savedSession.includes('[REDACTED]'))
+  clearBrowserSecrets()
+  firstProject.files[0].content = 'A disposed wallet must not save this later change.'
+  const secondProject = starterProject(), secondSession = createSession()
+  secondProject.files[0].content = 'Second wallet only.'
+  const closeSecond = flushCacheOnExit(() => {
+    saveProject(secondProject, cache, 'wallet-second')
+    saveSessions([secondSession], cache, 'wallet-second')
+  }, page, visibility)
+  page.dispatchEvent(new Event('pagehide'))
+  assert.equal(loadProject(cache, 'wallet-second').files[0].content, 'Second wallet only.')
+  assert.equal(cache.getItem(firstProjectKey), savedProject)
+  assert.equal(cache.getItem(firstSessionKey), savedSession)
+  closeSecond()
 })
 
 test('browser caches redact credentials in content and metadata before truncation and exclude recalled text', t => {

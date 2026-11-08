@@ -11,7 +11,7 @@ may update requirements. **The project is not submission-complete yet.**
 ## Required gates
 
 - [x] Coding/planning agent and visible recall/capture workflow implemented.
-- [x] Credential-free local startup, CLI demo, 133 tests, build/typecheck, and 6 browser
+- [x] Credential-free local startup, CLI demo, 135 tests, build/typecheck, and 7 browser
   scenarios validated. Details: [VALIDATION.md](VALIDATION.md).
 - [ ] **Walrus Memory writing on Mainnet:** verify the user's authorized account/delegate,
   actual completed writes, and independent inventory. Health/config responses are not proof.

@@ -9,8 +9,8 @@ captures completed turns through Walrus Memory. Build can propose changes to sel
 project files; you review them before applying them **in the browser**. This is contextual
 adaptation, not model retraining.
 
-> **Validation status:** the credential-free implementation passes 133 unit/HTTP/CLI tests
-> and 6 Chromium browser scenarios. Real wallet-extension onboarding, live model generation,
+> **Validation status:** the credential-free implementation passes 135 unit/HTTP/CLI tests
+> and 7 Chromium browser scenarios. Real wallet-extension onboarding, live model generation,
 > authorized MemWal access, Tatum reads, and Mainnet writes still need live validation.
 > No verified Mainnet evidence has been generated. See [validation](docs/VALIDATION.md)
 > and the [submission checklist](docs/SUBMISSION_CHECKLIST.md).

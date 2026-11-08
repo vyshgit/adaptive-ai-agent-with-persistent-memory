@@ -47,4 +47,5 @@ jobs:
         with:
           name: browser-failure-report
           path: .playwright/
+          include-hidden-files: true
           retention-days: 7

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { installWallet, signIn, demo, send, newSession, downloadedText, cachedValues, failOnPageErrors } from './helpers.mjs'
+import { installWallet, signIn, demo, send, newSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
 
 test('signed wallet onboarding and credential forms keep secrets out of browser caches and exports', async ({ page }) => {
   const checkErrors = failOnPageErrors(page)
@@ -116,6 +116,7 @@ test('offline recall loop proposes reviewable code, downloads exact changes, and
 
 test('browser-only import/export, safe paths, cache reload, and editor keyboard navigation work', async ({ page }) => {
   const checkErrors = failOnPageErrors(page)
+  await holdCacheTimers(page)
   await demo(page)
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: 'Import text files', exact: true }).click()
@@ -149,6 +150,43 @@ test('browser-only import/export, safe paths, cache reload, and editor keyboard 
   await page.reload()
   await expect(page.getByRole('textbox', { name: 'Edit src/second.ts', exact: true })).toHaveValue('const answer = 42\n')
   expect(JSON.stringify(await cachedValues(page))).not.toContain('NEVER_IMPORT')
+  checkErrors()
+})
+
+test('pending project and chat caches flush before reload and when the page becomes hidden', async ({ page }) => {
+  const checkErrors = failOnPageErrors(page)
+  await holdCacheTimers(page)
+  await demo(page)
+  const pendingFile = '// PENDING_RELOAD_EDITOR\n'
+  const lesson = 'I prefer TypeScript and npm: PENDING_RELOAD_LESSON.'
+  const editor = page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })
+  await editor.fill(pendingFile)
+  await page.getByRole('button', { name: 'Talk', exact: true }).click()
+  await send(page, lesson)
+  const before = JSON.stringify(await cachedValues(page))
+  expect(before).not.toContain(pendingFile.trim())
+  expect(before).not.toContain(lesson)
+
+  await page.reload()
+  await expect(editor).toHaveValue(pendingFile)
+  await expect(page.locator('article')).toHaveCount(2)
+  await expect(page.locator('article').first()).toContainText(lesson)
+  await expect(page.locator('article').last()).toContainText('Mock model — deterministic')
+
+  const hiddenFile = '// PENDING_VISIBILITY_EDITOR\n'
+  await editor.fill(hiddenFile)
+  expect(JSON.stringify(await cachedValues(page))).not.toContain(hiddenFile.trim())
+  await page.evaluate(() => {
+    const previous = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    } finally {
+      if (previous) Object.defineProperty(document, 'visibilityState', previous)
+      else delete document.visibilityState
+    }
+  })
+  expect(JSON.stringify(await cachedValues(page))).toContain(hiddenFile.trim())
   checkErrors()
 })
 

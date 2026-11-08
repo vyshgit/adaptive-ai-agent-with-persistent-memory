@@ -77,6 +77,15 @@ export async function cachedValues(page) {
   return page.evaluate(() => [...Array(localStorage.length)].map((_, i) => [localStorage.key(i), localStorage.getItem(localStorage.key(i))]))
 }
 
+export async function holdCacheTimers(page) {
+  // Keep autosave pending without pausing animation frames or API deadlines.
+  // The regression must exercise navigation flushing, not wait out the debounce.
+  await page.addInitScript(() => {
+    const schedule = window.setTimeout.bind(window)
+    window.setTimeout = (callback, delay, ...args) => schedule(callback, delay === 350 ? 60_000 : delay, ...args)
+  })
+}
+
 export function failOnPageErrors(page) {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))

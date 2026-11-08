@@ -83,7 +83,7 @@ retrying rather than duplicating an already accepted write.
 
 ## Honesty and safety are part of the feature
 
-The implementation passes **133 unit/HTTP/CLI tests and 6 Chromium scenarios** locally.
+The implementation passes **135 unit/HTTP/CLI tests and 7 Chromium scenarios** locally.
 Those include real local signature verification, replay/logout races, cross-wallet and
 stale-tab isolation, request/write bounds, and redaction across split stream chunks.
 Provider/account HTTP responses in automated tests are fixtures, not live compatibility.

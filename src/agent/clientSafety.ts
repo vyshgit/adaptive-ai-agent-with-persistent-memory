@@ -35,6 +35,20 @@ export function browserStorage(): CacheStorage | null {
   try { return globalThis.localStorage || null } catch { return null }
 }
 
+export function flushCacheOnExit(flush: () => void, page: EventTarget = window,
+  visibility: EventTarget & { readonly visibilityState: string } = document) {
+  // Browser navigation does not run React cleanup. Flush before pending autosave
+  // is lost, and remove old wallet listeners before its redaction set is cleared.
+  const hidden = () => { if (visibility.visibilityState === 'hidden') flush() }
+  page.addEventListener('pagehide', flush)
+  visibility.addEventListener('visibilitychange', hidden)
+  return () => {
+    page.removeEventListener('pagehide', flush)
+    visibility.removeEventListener('visibilitychange', hidden)
+    flush()
+  }
+}
+
 export function downloadText(name: string, content: string, type = 'text/plain') {
   const url = URL.createObjectURL(new Blob([content], { type }))
   const link = document.createElement('a')
