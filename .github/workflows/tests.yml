@@ -2,32 +2,49 @@ name: Tests
 
 on:
   push:
-    branches: [main, fix/walrus-write-integrity]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  memory-index:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24.22.1', '26.13.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Unit, HTTP, security, CLI, and legacy regression tests
+        run: npm test
+      - run: npm run build
+      - name: Credential-free two-session recall loop
+        run: npm run demo:agent
+      - name: Dependency vulnerability audit
+        run: npm audit
+
+  browser:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Test durable memory index
-        run: npm run test:memory
-      - name: Test agent API authentication
-        run: npm run test:auth
-      - name: Test dashboard memory visibility
-        run: npm run test:visibility
-      - name: Test admin API authentication
-        run: npm run test:admin-auth
-      - name: Test retrieval
-        run: npm run test:retrieval
-      - name: Run lexical retrieval benchmark
-        run: npm run benchmark:retrieval
-      - name: Evaluate retrieval paraphrases and hard negatives
-        run: npm run evaluate:retrieval
-      - name: Test vector retrieval candidate interface
-        run: npm run test:vector-candidate
-      - name: Test OpenAI embedding provider adapter
-        run: npm run test:embedding-provider
+          node-version: '26.13.0'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Signed synthetic wallet and offline workspace scenarios
+        run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-report
+          path: .playwright/
+          retention-days: 7

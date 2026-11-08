@@ -313,8 +313,8 @@ export default function App() {
               <span className="inline-flex items-center gap-xs rounded-full border border-utility-brand-200 bg-utility-brand-50 px-md py-xxs text-xs font-medium text-utility-brand-700">
                 Adaptive AI Agent
               </span>
-              <span className="inline-flex items-center gap-xs rounded-full border border-utility-success-200 bg-utility-success-50 px-md py-xxs text-xs font-medium text-utility-success-700">
-                Walrus Mainnet Config
+              <span className="inline-flex items-center gap-xs rounded-full border border-utility-gray-200 bg-utility-gray-50 px-md py-xxs text-xs font-medium text-utility-gray-700">
+                Legacy / demo storage
               </span>
             </div>
             <p className="mt-xs text-sm text-tertiary">An AI agent that learns what works, remembers what fails, and adapts its next decision.</p>

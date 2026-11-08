@@ -13,3 +13,12 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-family-sans);
 }
+
+/* Keep native controls in the same semantic theme as the workspace. */
+:root { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse, .animate-spin { animation: none; }
+  html { scroll-behavior: auto; }
+}

@@ -5,6 +5,7 @@ dist/
 # agents write .env files into the project when asked to configure things.
 .env
 .env.*
+!.env.example
 # Platform markers and harness internals — not the user's source. (The bridge's
 # file routes hide every dotfile, these included.)
 # .claude/ and .mcp.json are deliberately NOT listed: they carry the Tatum skills
@@ -15,3 +16,6 @@ dist/
 # Runtime memory metadata is local state, not source data.
 data/memories.json
 data/memories.json.*.tmp
+
+# Browser-test reports and screenshots are generated artifacts.
+.playwright/
