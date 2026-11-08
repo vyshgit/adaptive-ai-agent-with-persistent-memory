@@ -23,7 +23,7 @@ export function validateChat(input, config, secrets = []) {
   }
   const mode = input.mode || 'build'
   if (!['talk', 'plan', 'build'].includes(mode)) throw new AppError('invalid_request', 'mode must be talk, plan, or build.')
-  return { sessionId, message, history, project, model, mode, capture: input.capture !== false,
+  return { sessionId, message, history, project, model, mode, capture: input.capture !== false, stream: input.stream !== false,
     occurredAt: input.occurredAt || new Date().toISOString() }
 }
 
@@ -52,7 +52,7 @@ export async function* runChat({ input, memory, llm, agentId, config, signal, se
     const calls = []
     let roundText = ''
     for await (const event of llm.streamCompletion({ messages, memories: recalled.memories, project: input.project,
-      tools: config.toolsEnabled && round < 3 ? tools.schemas : [], model: input.model, config, signal })) {
+      tools: config.toolsEnabled && round < 3 ? tools.schemas : [], model: input.model, config, signal, stream: input.stream !== false })) {
       signal?.throwIfAborted()
       if (event.type === 'delta') {
         outputLength += event.text.length

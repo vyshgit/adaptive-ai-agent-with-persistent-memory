@@ -45,9 +45,12 @@ choose `agentId`; the server derives it from the signed wallet or demo identity.
 | GET | `/status` | Identity/auth, public LLM configuration, memory health, Tatum/delegate verification, coding limits. |
 | GET | `/models` | Array of `{ id, label }` from the session's bounded model list. |
 | POST | `/connect` | Model connection below; returns key-free `connection`. |
+| POST | `/verify` | `{ "checkCapabilities": false, "toolsEnabled": true }` (optional booleans); recheck the saved live model credential. |
 | POST | `/disconnect` | `{}`; remove model connection without owner-key fallback. |
 | POST | `/connections/tatum` | `{ "apiKey": "…" }`; verify a Sui Mainnet checkpoint with this user's key. |
 | POST | `/connections/memwal` | `{ "accountId": "0x…", "delegateKey": "…" }`; Tatum must be connected first. |
+| POST | `/connections/tatum/verify` | `{}`; fresh checkpoint read with the saved session key. |
+| POST | `/connections/memwal/verify` | `{}`; recheck account owner and signed delegate access using saved session credentials, without writes. |
 | POST | `/connections/tatum/disconnect` | `{}`; remove Tatum and its dependent memory connection. |
 | POST | `/connections/memwal/disconnect` | `{}`; remove memory connection, not stored remote records. |
 | GET | `/chain` | Checkpoint/account-object observation and an explicit storage-proof warning. |
@@ -59,9 +62,10 @@ Live model connection:
   "mode": "live",
   "baseUrl": "https://agentrouter.org/v1",
   "apiKey": "YOUR_MODEL_KEY",
-  "model": "gpt-6.1-sol",
+  "model": "EXACT_MODEL_ID_FROM_YOUR_ACCOUNT",
   "apiStyle": "responses",
-  "toolsEnabled": true
+  "toolsEnabled": true,
+  "checkCapabilities": false
 }
 ```
 
@@ -73,8 +77,16 @@ refers to the **RecallLoop server**, not a user's PC.
 
 `{ "mode": "mock" }` selects a scripted model without changing memory mode. Demo sessions
 cannot submit live credentials. Discovery falls back to the entered model only for an
-unsupported discovery route; `verified` describes discovery, not successful generation or
-tool compatibility. AgentRouter authorization errors are not bypassed.
+unsupported discovery route. `/connect` stages credentials until one small non-streamed
+coding generation succeeds (up to 256 output tokens; provider costs apply). `/models`
+success **never** sets `verified`. Public `verification` records the checked model,
+protocol, time, discovery availability, generation, streaming, and tools. Optional
+`checkCapabilities: true` adds a streaming check and, if tools are enabled, a forced dummy
+function-call check. Neither executes tools or writes memories; unchecked capabilities
+remain `not_checked`. Capabilities apply only to that model/protocol, not the entire list.
+A failed candidate cannot replace the saved connection. Failed `/verify` keeps its key
+but exposes `lastVerificationFailure` and clears the current verified indicator.
+AgentRouter authorization errors are never bypassed; see [provider setup](./PROVIDER_SETUP.md).
 
 MemWal connection checks the official Mainnet deployment, account ID/type, Shared object's
 JSON `owner`, signed-in address, healthy/write-ready relayer, and signed delegate metadata
@@ -343,6 +355,7 @@ JSON errors: `{ success: false, code, error, retryable }`; SSE errors use `messa
 | `memory_not_configured`, `llm_not_configured` | 503 | No usable connection; no automatic mock fallback. |
 | `memory_unavailable`, `inventory_resync`, `chain_unavailable` | 502 / 503 | Upstream/deadline/snapshot failure; recall degrades at HTTP 200. |
 | `llm_failed` | 502 or SSE | Provider/protocol failure; inspect retryability. |
+| `provider_*` | 502 or SSE | Sanitized key, client approval, quota, model, protocol, streaming/tools, network, timeout, or output diagnostic; see [provider setup](./PROVIDER_SETUP.md#sanitized-diagnostics). |
 | `capture_failed` | 502 or `stored` | No confirmed memory; answer may have succeeded. |
 
 Known-key redaction runs before prompts, capture, proposals, JSON, and SSE; it is

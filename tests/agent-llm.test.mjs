@@ -100,7 +100,7 @@ test('stream fallback is attempted once only for an explicit unsupported-stream 
   assert.equal(events[0].text, 'Fallback answer')
   assert.equal(attempts, 2)
   attempts = 0
-  await assert.rejects(run(async () => { attempts++; return json({ error: 'Invalid model' }, 400) }), { code: 'llm_failed' })
+  await assert.rejects(run(async () => { attempts++; return json({ error: 'Invalid model' }, 400) }), { code: 'provider_model_unavailable' })
   assert.equal(attempts, 1)
 })
 
@@ -109,7 +109,7 @@ test('provider refusals, client restrictions, and error bodies never echo creden
     await assert.rejects(run(async (_url, request) => {
       assert.equal(request.headers.get('User-Agent'), 'RecallLoop/0.2.0')
       return json({ error: 'synthetic-provider-key upstream debug' }, status)
-    }), error => error.code === 'llm_failed' && !error.message.includes('synthetic-provider-key'))
+    }), error => error.code.startsWith('provider_') && !error.message.includes('synthetic-provider-key'))
   }
   const llm = createLlm({ env: { AGENT_LLM_EXTRA_HEADERS: '{"User-Agent":"another-approved-client"}' }, fetchImpl: () => { assert.fail('An impersonation header must not reach fetch') } })
   await assert.rejects(collect(llm.streamCompletion({ messages, config: config('responses'), model: 'test-model' })), /Only legitimate attribution/)
@@ -139,9 +139,9 @@ test('tool argument corruption and excessive streamed IDs/arguments are bounded'
 
 test('models discovery is bounded, deduplicated, and honest about fallback/authorization', async () => {
   const llm = createLlm({ fetchImpl: async () => json({ data: [{ id: 'other-model' }, { id: 'other-model' }, { id: 'bad model with spaces' }] }) })
-  assert.deepEqual(await llm.models(config('responses')), { models: ['test-model', 'other-model'], verified: true })
+  assert.deepEqual(await llm.models(config('responses')), { models: ['test-model', 'other-model'], discovered: true, verified: false })
   const unsupported = createLlm({ fetchImpl: async () => json({}, 404) })
-  assert.deepEqual(await unsupported.models(config('chat')), { models: ['test-model'], verified: false })
+  assert.deepEqual(await unsupported.models(config('chat')), { models: ['test-model'], discovered: false, verified: false })
   const denied = createLlm({ fetchImpl: async () => json({}, 403) })
   await assert.rejects(denied.models(config('chat')), /client allowlist/)
   const malformed = createLlm({ fetchImpl: async () => json({ models: [] }) })

@@ -56,9 +56,32 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
       try {
         const discovered = await llm.models(config, req.workspaceController.signal)
         config.models = discovered.models
-        config.verified = discovered.verified
+        req.workspaceController.signal.throwIfAborted()
+        const checked = await llm.verify(config, { signal: req.workspaceController.signal, checkCapabilities: req.body.checkCapabilities === true })
+        config.verification = checked.verification ? { ...checked.verification, discovery: discovered.discovered ? 'available' : 'unavailable' } : null
         return { commit: () => connections.connect(req, config), cleanup() { config.apiKey = '' } }
       } catch (error) { config.apiKey = ''; throw error }
+    })
+    res.json({ success: true, connection })
+  }))
+  router.post('/verify', asyncRoute(async (req, res) => {
+    const connection = await operation(req, async (session, signal) => {
+      const previous = session.config
+      if (!previous || previous.mode !== 'live') throw new AppError('llm_not_configured', 'Connect a live model API before verifying its saved session connection.', 412)
+      for (const name of ['checkCapabilities', 'toolsEnabled']) if (req.body[name] !== undefined && typeof req.body[name] !== 'boolean') throw new AppError('invalid_request', `${name} must be a boolean.`)
+      const config = { ...previous, ...(req.body.toolsEnabled !== undefined ? { toolsEnabled: req.body.toolsEnabled } : {}), lastVerificationFailure: null }
+      try {
+        const checked = await llm.verify(config, { signal, checkCapabilities: req.body.checkCapabilities === true })
+        config.verification = { ...checked.verification, discovery: previous.verification?.discovery || 'unavailable' }
+        return { commit: () => connections.connect(req, config), cleanup() { config.apiKey = '' } }
+      } catch (error) {
+        config.apiKey = ''
+        if (!signal.aborted && !session.disposed && session.config === previous) {
+          const safe = publicError(error)
+          previous.lastVerificationFailure = { checkedAt: new Date().toISOString(), code: safe.code, message: safe.error }
+        }
+        throw error
+      }
     })
     res.json({ success: true, connection })
   }))
@@ -67,6 +90,10 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
     connection: await operation(req, (session, signal) => services.connectTatum(session, req.body, signal)) })))
   router.post('/connections/memwal', asyncRoute(async (req, res) => res.json({ success: true,
     connection: await operation(req, (session, signal) => services.connectMemory(session, req.body, signal)) })))
+  router.post('/connections/tatum/verify', asyncRoute(async (req, res) => res.json({ success: true,
+    connection: await operation(req, (session, signal) => services.connectTatum(session, { apiKey: session.tatumKey }, signal)) })))
+  router.post('/connections/memwal/verify', asyncRoute(async (req, res) => res.json({ success: true,
+    connection: await operation(req, (session, signal) => services.connectMemory(session, { accountId: session.memoryConnection?.accountId, delegateKey: session.env.MEMWAL_PRIVATE_KEY }, signal)) })))
   router.post('/connections/tatum/disconnect', asyncRoute(async (req, res) => { await operation(req, async session => services.disconnectTatum(session)); res.json({ success: true }) }))
   router.post('/connections/memwal/disconnect', asyncRoute(async (req, res) => { await operation(req, async session => services.disconnectMemory(session)); res.json({ success: true }) }))
   router.get('/memory', asyncRoute(async (req, res) => {

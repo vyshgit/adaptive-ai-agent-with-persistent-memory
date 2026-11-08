@@ -11,6 +11,9 @@ export function validateProviderUrl(value, env = process.env) {
   if (url.username || url.password || url.search || url.hash || /[%\\]/.test(url.pathname)) {
     throw new AppError('invalid_request', 'Model URLs cannot contain credentials, query strings, fragments, or encoded paths.')
   }
+  if (/\/(?:responses|chat\/completions|models|messages)\/?$/.test(url.pathname)) {
+    throw new AppError('invalid_request', 'Use the model API base URL, not a full /responses, /chat/completions, /models, or /messages endpoint.')
+  }
   if (local) {
     if (env.NODE_ENV === 'production' && env.AGENT_LLM_ALLOW_LOCAL !== 'true') throw new AppError('invalid_request', 'Local model endpoints are disabled in production.')
     if (!['http:', 'https:'].includes(url.protocol) || String(url.port || (url.protocol === 'https:' ? 443 : 80)) === String(env.PORT || 3000)) {
@@ -45,14 +48,18 @@ export function validateConnection(input, env = process.env) {
   const model = requireText(input.model, 'model', 128, { pattern: /^[A-Za-z0-9._:/@+-]+$/ })
   if (!['chat', 'responses'].includes(input.apiStyle)) throw new AppError('invalid_request', 'apiStyle must be chat or responses.')
   if (input.toolsEnabled !== undefined && typeof input.toolsEnabled !== 'boolean') throw new AppError('invalid_request', 'toolsEnabled must be a boolean.')
+  if (input.checkCapabilities !== undefined && typeof input.checkCapabilities !== 'boolean') throw new AppError('invalid_request', 'checkCapabilities must be a boolean.')
   return { mode: 'live', baseUrl, apiKey, model, models: [model], apiStyle: input.apiStyle,
     toolsEnabled: input.toolsEnabled !== false, source: 'browser-session' }
 }
 
 export function publicConnection(config) {
+  const verified = config.verification?.generation === 'verified' && config.verification.model === config.model
+    && config.verification.apiStyle === config.apiStyle && !config.lastVerificationFailure
   return { mode: config.mode, model: config.model, models: config.models.map(id => ({ id, label: id })),
     apiStyle: config.apiStyle, baseUrl: config.baseUrl, toolsEnabled: config.toolsEnabled,
-    source: config.source, verified: config.verified || false, expiresAt: config.expiresAt || null }
+    source: config.source, verified: Boolean(verified), verification: config.verification || null,
+    lastVerificationFailure: config.lastVerificationFailure || null, expiresAt: config.expiresAt || null }
 }
 
 export function createConnectionStore({ clock = () => Date.now() } = {}) {
