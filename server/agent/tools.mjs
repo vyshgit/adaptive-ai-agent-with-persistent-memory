@@ -8,6 +8,10 @@ function tool(name, description, properties, required) {
 }
 const text = (maxLength = 500) => ({ type: 'string', maxLength })
 export const TOOL_SCHEMAS = [
+  tool('plan_task', 'Share or replace a short user-visible working plan. These are proposed steps, not completed actions; this does not execute or approve anything.',
+    { summary: text(240), steps: { type: 'array', items: text(240), minItems: 1, maxItems: 6 } }, ['summary', 'steps']),
+  tool('ask_user', 'Ask one essential clarification and pause this turn for a real user reply. Call this alone; other calls in the same round will be blocked. Optional replies are suggestions, never selected defaults or established personal facts.',
+    { question: text(400), why: text(600), options: { type: 'array', items: text(160), minItems: 0, maxItems: 4 } }, ['question']),
   tool('list_files', 'List only the user-selected browser project files. This is not the server filesystem.', {}, []),
   tool('read_file', 'Read lines of a selected project file before proposing a change. Output is bounded; paginate with startLine.',
     { path: text(240), startLine: { type: 'integer', minimum: 1 }, lineCount: { type: 'integer', minimum: 1, maximum: 200 } }, ['path']),
@@ -37,11 +41,24 @@ export function createTools({ memory, agentId, project, secrets = [], capture = 
         const rule = schema.properties[key]
         if ((rule.type === 'string' && (typeof value !== 'string' || value.length > rule.maxLength))
           || (rule.type === 'integer' && (!Number.isInteger(value) || value < rule.minimum || (rule.maximum && value > rule.maximum)))
+          || (rule.type === 'array' && (!Array.isArray(value) || value.length < rule.minItems || value.length > rule.maxItems
+            || value.some(item => typeof item !== 'string' || !item.trim() || item.length > rule.items.maxLength)))
           || (rule.enum && !rule.enum.includes(value))) throw new AppError('invalid_request', `Invalid ${key} tool argument.`)
       }
       let result
       let proposal
-      if (call.name === 'list_files') result = { files: project.files.map(file => ({ path: file.path, characters: file.content.length })) }
+      let plan
+      let question
+      if (call.name === 'plan_task') {
+        plan = redactValue({ id: randomUUID(), summary: requireText(args.summary, 'plan summary', 240), steps: args.steps.map(step => requireText(step, 'plan step', 240)) }, secrets)
+        result = { shared: true, executed: false, approvalGranted: false, plan }
+      } else if (call.name === 'ask_user') {
+        const options = (args.options || []).map(option => requireText(option, 'reply option', 160))
+        if (new Set(options.map(option => option.toLowerCase())).size !== options.length) throw new AppError('invalid_request', 'Reply options must be distinct.')
+        question = redactValue({ id: randomUUID(), question: requireText(args.question, 'clarification question', 400),
+          ...(args.why ? { why: requireText(args.why, 'clarification context', 600) } : {}), options }, secrets)
+        result = { awaitingUser: true, answered: false, question }
+      } else if (call.name === 'list_files') result = { files: project.files.map(file => ({ path: file.path, characters: file.content.length })) }
       else if (call.name === 'read_file') {
         const path = safeProjectPath(args.path, secrets)
         if (!files.has(path)) throw new AppError('invalid_request', 'This file is not in the user-selected project context.')
@@ -78,7 +95,8 @@ export function createTools({ memory, agentId, project, secrets = [], capture = 
       const json = JSON.stringify(result)
       if (json.length > outputBudget) throw new AppError('invalid_request', 'The tool output budget is exhausted. Use the context already retrieved.')
       outputBudget -= json.length
-      return { result, ...(proposal ? { proposal } : {}), preview: `${call.name}: ${proposal ? `review ${proposal.path}` : json.slice(0, 240)}` }
+      return { result, ...(proposal ? { proposal } : {}), ...(plan ? { plan } : {}), ...(question ? { question } : {}),
+        preview: `${call.name}: ${proposal ? `review ${proposal.path}` : plan ? plan.summary : question ? question.question : json.slice(0, 240)}` }
     } catch (error) { return { result: publicError(error), error: true, preview: publicError(error).error } }
   }
   return { schemas, execute }

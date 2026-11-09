@@ -130,6 +130,8 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
           if (event.type === 'delta') payload.answer += event.data.text
           if (event.type === 'memory') { payload.memories = event.data.memories; payload.memory = event.data }
           if (event.type === 'proposal') payload.proposals.push(event.data)
+          if (event.type === 'plan') payload.plan = event.data
+          if (event.type === 'question') payload.question = event.data
           if (event.type === 'tool') payload.tools.push(event.data)
           if (event.type === 'done') payload.finishReason = event.data.finishReason
           if (event.type === 'stored') payload.stored = event.data

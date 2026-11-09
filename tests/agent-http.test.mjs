@@ -75,6 +75,49 @@ test('HTTP mock loop delivers memory, deltas, done, stored and recalls in a fres
   assert.equal((await browser.json('/memory/seed', { body: { confirm: 'seed-mainnet' } })).status, 412)
 })
 
+test('HTTP trip planning carries scoped recall, plan and clarification through JSON, then continues with a real user reply over SSE', async t => {
+  const f = await workspaceHttp(t)
+  const browser = f.client()
+  await browser.demo()
+  await browser.json('/chat', { body: chat({ sessionId: 'departure', stream: false, message: 'My departure city is London. I prefer short trips and EUR.' }) })
+  const planned = await browser.json('/chat', { body: chat({ sessionId: 'trip', mode: 'plan', stream: false, capture: false, message: 'Plan a quick trip to Alaska.' }) })
+  assert.equal(planned.status, 200)
+  assert.equal(planned.data.memory.lookups, 2)
+  assert.ok(planned.data.memory.memories.some(hit => hit.text.includes('departure city is London')))
+  assert.ok(planned.data.plan.steps.length)
+  assert.match(planned.data.question.question, /dates and length/)
+  assert.match(planned.data.question.why, /London/)
+  assert.equal(planned.data.finishReason, 'question')
+  assert.deepEqual(planned.data.proposals, [])
+  const continued = await browser.request('/chat', { body: chat({ sessionId: 'trip', mode: 'plan', capture: false, stream: true,
+    message: 'Next weekend, for 3 days.', history: [{ role: 'user', content: 'Plan a quick trip to Alaska.' },
+      { role: 'assistant', content: `${planned.data.question.question}\n${planned.data.question.why}` }] }) })
+  const events = await collectSse(continued)
+  const text = events.filter(event => event.type === 'delta').map(event => event.data.text).join('')
+  assert.match(text, /Departure: \*\*London\*\*/)
+  assert.match(text, /No live travel facts were checked, no booking was made/)
+  assert.equal(events.some(event => ['question', 'proposal'].includes(event.type)), false)
+  assert.equal(events.at(-1).data.skipped, true)
+})
+
+test('HTTP question-only completion does not fabricate an answer or execute a write queued in the clarification round', async t => {
+  let explicitWrites = 0
+  const f = await workspaceHttp(t, { llm: { async *streamCompletion() {
+    yield { type: 'tool_call', id: 'queued-write', name: 'remember', args: { text: 'Guessed departure city.' } }
+    yield { type: 'tool_call', id: 'ask', name: 'ask_user', args: { question: 'Which city?', options: [] } }
+  } }, initialise(session) { session.memory.remember = async () => { explicitWrites++; return {} } } })
+  const browser = f.client()
+  await browser.demo()
+  const result = await browser.json('/chat', { body: chat({ stream: false, capture: false, message: 'Plan a trip.' }) })
+  assert.equal(result.status, 200)
+  assert.equal(result.data.answer, '')
+  assert.equal(result.data.question.question, 'Which city?')
+  assert.equal(result.data.finishReason, 'question')
+  assert.equal(result.data.tools.find(tool => tool.id === 'queued-write').status, 'blocked')
+  assert.equal(explicitWrites, 0)
+  assert.equal((await browser.json('/memory')).data.inventory.total, 0)
+})
+
 test('HTTP parsers accept bounded projects above 32 KB but reject bad JSON, compression and oversized requests', async t => {
   const f = await workspaceHttp(t)
   const browser = f.client()

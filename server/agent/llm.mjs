@@ -3,6 +3,7 @@ import { AppError, clampNumber } from '../safety.mjs'
 import { validateProviderUrl } from './connections.mjs'
 import { parseSse, readLimitedText } from './sse.mjs'
 import { providerFailure, providerNetworkFailure } from './provider-errors.mjs'
+import { mockTripTurn } from './mock-planning.mjs'
 
 function checkCalls(calls, complete = false) {
   if (calls.size > 4 || [...calls.values()].some(call => typeof call.id !== 'string' || call.id.length > 128
@@ -79,14 +80,20 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
     signal?.throwIfAborted()
     const task = messages.filter(message => message.role === 'user').at(-1)?.content || ''
     const toolMessages = messages.filter(message => message.role === 'tool')
+    const trip = mockTripTurn({ messages, memories, tools })
+    if (trip) { yield* trip; return }
     const coding = /\b(fix|code|refactor|implement|improve|add|greet|test)\b/i.test(task)
     const source = project?.files.find(file => /\.[cm]?[jt]sx?$/.test(file.path))
     if (coding && source && tools.length && toolMessages.length === 0) {
+      if (tools.some(tool => tool.function.name === 'plan_task')) yield { type: 'tool_call', id: 'mock-plan', name: 'plan_task', args: {
+        summary: 'A small, reviewable code change', steps: ['Inspect the selected source and relevant preferences.',
+          'Prepare a bounded proposal only in Build mode.', 'Review the diff; download and verify it locally before recording an outcome.'] } }
       yield { type: 'tool_call', id: 'mock-read', name: 'read_file', args: { path: source.path } }
       yield { type: 'finish', reason: 'tool_calls' }
       return
     }
-    if (coding && source && tools.some(tool => tool.function.name === 'propose_file') && toolMessages.length === 1) {
+    if (coding && source && tools.some(tool => tool.function.name === 'propose_file')
+      && toolMessages.some(message => message.toolCallId === 'mock-read') && !toolMessages.some(message => message.toolCallId === 'mock-propose')) {
       const original = source.content
       const starter = 'export function greet(name: string) {\n  return `Hello, ${name.trim()}!`\n}\n'
       const content = original === starter

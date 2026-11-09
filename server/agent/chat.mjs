@@ -2,6 +2,8 @@ import { AppError, requireText, redactSecrets, publicError, within, redactValue,
 import { validateProject } from './project.mjs'
 import { buildSystemPrompt } from './prompt.mjs'
 import { createTools } from './tools.mjs'
+import { recallForTurn } from './recall.mjs'
+import { formatContext } from '../memory/context.mjs'
 
 export function validateChat(input, config, secrets = []) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError('invalid_request', 'Provide a chat request.')
@@ -21,7 +23,7 @@ export function validateChat(input, config, secrets = []) {
   if (input.occurredAt !== undefined && (typeof input.occurredAt !== 'string' || !/^\d{4}-\d\d-\d\dT.*Z$/.test(input.occurredAt) || !Number.isFinite(Date.parse(input.occurredAt)))) {
     throw new AppError('invalid_request', 'occurredAt must be a valid UTC timestamp ending in Z.')
   }
-  const mode = input.mode || 'build'
+  const mode = input.mode || 'talk'
   if (!['talk', 'plan', 'build'].includes(mode)) throw new AppError('invalid_request', 'mode must be talk, plan, or build.')
   return { sessionId, message, history, project, model, mode, capture: input.capture !== false, stream: input.stream !== false,
     occurredAt: input.occurredAt || new Date().toISOString() }
@@ -29,23 +31,19 @@ export function validateChat(input, config, secrets = []) {
 
 export async function* runChat({ input, memory, llm, agentId, config, signal, secrets = [], captureTimeoutMs = 10_000, toolTimeoutMs = 15_000 }) {
   const redactor = createStreamRedactor(secrets)
-  let recalled
-  try { recalled = await memory.recall({ agentId, query: input.message.slice(0, 2000) }, { signal }) }
-  catch (error) {
-    if (signal?.aborted) throw error
-    recalled = { context: 'No relevant memories yet.', memories: [], strategy: 'unavailable', meta: { tokenEstimate: 0, error: 'memory_unavailable' } }
-  }
-  recalled = redactValue(recalled, secrets)
+  let recalled = await recallForTurn({ input, memory, agentId, signal, secrets })
   signal?.throwIfAborted()
   yield { type: 'memory', data: { context: recalled.context, memories: recalled.memories, strategy: recalled.strategy,
-    tokenEstimate: recalled.meta.tokenEstimate, memoryUnavailable: Boolean(recalled.meta.error) } }
+    tokenEstimate: recalled.meta.tokenEstimate, lookups: recalled.meta.lookups, memoryUnavailable: Boolean(recalled.meta.error) } }
   const tools = createTools({ memory, agentId, project: input.project, secrets, capture: input.capture, mode: input.mode })
   const messages = [{ role: 'system', content: buildSystemPrompt({ contextBlock: recalled.context,
-    project: input.project, toolsEnabled: config.toolsEnabled, capture: input.capture, mode: input.mode }) }, ...input.history, { role: 'user', content: input.message }]
+    project: input.project, toolsEnabled: config.toolsEnabled, capture: input.capture, mode: input.mode,
+    memoryUnavailable: Boolean(recalled.meta.error) }) }, ...input.history, { role: 'user', content: input.message }]
   const toolCapture = []
   let answer = ''
   let outputLength = 0
   let finishReason = 'stop'
+  let question
   const callIds = new Set()
   for (let round = 0; round <= 3; round++) {
     signal?.throwIfAborted()
@@ -75,8 +73,17 @@ export async function* runChat({ input, memory, llm, agentId, config, signal, se
     }
     if (!calls.length) break
     messages.push({ role: 'assistant', content: redactSecrets(roundText, secrets), toolCalls: calls })
+    const asksForReply = calls.some(call => call.name === 'ask_user')
     for (const call of calls) {
       signal?.throwIfAborted()
+      // A clarification is a hard pause, not a parallel approval. Do not let a
+      // model queue a write or proposal alongside an unanswered question.
+      if (question || (asksForReply && call.name !== 'ask_user')) {
+        const blocked = { success: false, code: 'awaiting_user', error: 'Not run: this round asks for your reply first.' }
+        yield { type: 'tool', data: { id: call.id, name: call.name, status: 'blocked', preview: blocked.error } }
+        messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify(blocked) })
+        continue
+      }
       yield { type: 'tool', data: { id: call.id, name: call.name, args: call.args, status: 'running' } }
       const outcome = await within(tools.execute(call), toolTimeoutMs, { error: true,
         result: { success: false, code: 'tool_pending', error: 'The tool is still running; no result was confirmed. Memory jobs may complete later. Check inventory before retrying.' },
@@ -84,24 +91,28 @@ export async function* runChat({ input, memory, llm, agentId, config, signal, se
       signal?.throwIfAborted()
       yield { type: 'tool', data: { id: call.id, name: call.name, status: outcome.error ? 'error' : 'done', preview: outcome.preview } }
       if (outcome.proposal) yield { type: 'proposal', data: outcome.proposal }
+      if (outcome.plan) yield { type: 'plan', data: outcome.plan }
+      if (outcome.question) { question = outcome.question; yield { type: 'question', data: question } }
       if (call.name === 'recall_memory' && !outcome.error) {
-        const unique = new Map([...recalled.memories, ...outcome.result.memories].map(item => [item.blobId, item]))
-        recalled.memories = [...unique.values()].slice(0, 20)
+        const formatted = formatContext([...recalled.memories, ...outcome.result.memories], { maxTokens: 800, limit: 20 })
+        recalled = { ...recalled, ...formatted, meta: { ...recalled.meta, ...formatted.meta,
+          ...(recalled.meta.error || outcome.result.meta.error ? { error: 'memory_unavailable' } : {}) } }
         yield { type: 'memory', data: { context: recalled.context, memories: recalled.memories, strategy: recalled.strategy,
-          tokenEstimate: recalled.meta.tokenEstimate, memoryUnavailable: Boolean(outcome.result.meta.error) } }
+          tokenEstimate: recalled.meta.tokenEstimate, lookups: recalled.meta.lookups, memoryUnavailable: Boolean(recalled.meta.error) } }
       }
       messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify(outcome.result) })
       if (/^[A-Za-z0-9_-]{1,64}$/.test(call.name)) toolCapture.push({ role: 'tool', name: call.name, content: outcome.preview.slice(0, 1000) })
     }
+    if (question) { finishReason = 'question'; break }
   }
   const tail = redactor.finish()
   answer += tail
   if (tail) yield { type: 'delta', data: { text: tail } }
   signal?.throwIfAborted()
-  if (!answer.trim()) throw new AppError('llm_failed', 'The model returned no answer. Any proposals already shown still require review.', 502, true)
+  if (!answer.trim() && !question) throw new AppError('llm_failed', 'The model returned no answer. Any proposals already shown still require review.', 502, true)
   // Start capture without awaiting it. A disconnect after done must not lose an accepted write.
   const capture = input.capture ? memory.ingest({ agentId, sessionId: input.sessionId, occurredAt: input.occurredAt,
-    messages: [{ role: 'user', content: input.message }, ...(answer ? [{ role: 'assistant', content: answer.slice(0, 20_000) }] : []), ...toolCapture] }, { secrets })
+    messages: [{ role: 'user', content: input.message }, { role: 'assistant', content: [answer, question?.question].filter(Boolean).join('\n\n').slice(0, 20_000) }, ...toolCapture] }, { secrets })
     .then(result => ({ ...result.stored, blobs: result.blobs, chainAnchor: result.chainAnchor }))
     .catch(error => ({ verbatim: 0, facts: 0, failed: 1, blobs: [], code: 'capture_failed', message: publicError(error).error }))
     : Promise.resolve({ verbatim: 0, facts: 0, failed: 0, blobs: [], skipped: true })

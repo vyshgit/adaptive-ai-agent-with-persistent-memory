@@ -119,10 +119,11 @@ export function createMemoryService({ env = process.env, backend = createMemoryB
     try {
       const sdk = backend.getClient()
       const requests = tiers.map(async tier => {
-        const hits = await sdk.recall({ query: tier === 'profile' ? 'User preferences coding workflow constraints' : query,
+        const hits = await sdk.recall({ query: tier === 'profile' ? 'User preferences personal context travel planning coding workflow constraints' : query,
           namespace: memoryNamespace(agentId, tier), limit, maxTokens, maxDistance: tier === 'profile' ? 2 : maxDistance,
           sort: tier === 'profile' ? 'recent' : 'relevance', timeoutMs: 10_000 })
-        return (hits.results || []).map(hit => ({ ...hit, text: redactSecrets(hit.text, [], env), tier }))
+        return (hits.results || []).map(hit => ({ ...hit, text: redactSecrets(hit.text, [], env), tier,
+          ...(backend.mode() === 'mock' && recent.has(hit.blob_id) ? { createdAt: recent.get(hit.blob_id).createdAt } : {}) }))
       })
       const result = await within(Promise.allSettled(requests), recallTimeoutMs, null, signal)
       if (!result) return unavailable()

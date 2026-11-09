@@ -10,6 +10,7 @@ export interface MemoryContext {
   memories: MemoryHit[]
   strategy?: string
   tokenEstimate: number
+  lookups?: number
   memoryUnavailable?: boolean
 }
 
@@ -58,7 +59,7 @@ export interface StoredCapture {
 export interface ToolActivity {
   id: string
   name: string
-  status: 'running' | 'done' | 'error'
+  status: 'running' | 'done' | 'error' | 'blocked'
   preview?: string
 }
 
@@ -72,6 +73,19 @@ export interface Proposal {
   status: 'pending' | 'applied' | 'rejected'
 }
 
+export interface WorkingPlan {
+  id: string
+  summary: string
+  steps: string[]
+}
+
+export interface Clarification {
+  id: string
+  question: string
+  why?: string
+  options: string[]
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -79,10 +93,13 @@ export interface ChatMessage {
   createdAt: string
   status: 'pending' | 'streaming' | 'complete' | 'stopped' | 'error'
   model?: string
+  mode?: WorkspaceMode
   memory?: MemoryContext
   stored?: StoredCapture
   tools?: ToolActivity[]
   proposals?: Proposal[]
+  plan?: WorkingPlan
+  question?: Clarification
   error?: string
   retryable?: boolean
 }
@@ -108,6 +125,19 @@ export interface Project {
   files: ProjectFile[]
 }
 
+export type CapabilityState = 'verified' | 'unsupported' | 'failed' | 'not_checked'
+export interface ConnectionVerification {
+  model: string
+  apiStyle: 'chat' | 'responses'
+  checkedAt: string
+  discovery: 'available' | 'unavailable'
+  generation: 'verified'
+  streaming: CapabilityState
+  tools: CapabilityState
+  streamingError?: { code: string; message: string }
+  toolsError?: { code: string; message: string }
+}
+
 export interface Connection {
   mode: 'mock' | 'live' | 'unconfigured'
   model: string
@@ -117,6 +147,8 @@ export interface Connection {
   toolsEnabled: boolean
   source: string
   verified: boolean
+  verification?: ConnectionVerification | null
+  lastVerificationFailure?: { checkedAt: string; code: string; message: string } | null
   expiresAt?: string | null
 }
 
@@ -126,7 +158,7 @@ export interface WorkspaceStatus {
   llm: Connection
   memory: MemoryStatus
   tatum: { configured: boolean; verified: boolean; verifiedAt?: string }
-  memoryConnection?: { accountId: string; owner: string; publicKey: string; verified: boolean } | null
+  memoryConnection?: { accountId: string; owner: string; publicKey: string; verified: boolean; verifiedAt?: string } | null
 }
 
 export interface WalletSession {
@@ -151,8 +183,10 @@ export type AgentEvent =
   | { type: 'delta'; data: { text: string } }
   | { type: 'tool'; data: ToolActivity }
   | { type: 'proposal'; data: Proposal }
+  | { type: 'plan'; data: WorkingPlan }
+  | { type: 'question'; data: Clarification }
   | { type: 'done'; data: { model: string; finishReason: string } }
   | { type: 'stored'; data: StoredCapture }
   | { type: 'error'; data: { code: string; message: string; retryable: boolean } }
 
-export type Phase = 'idle' | 'recalling' | 'thinking' | 'tools' | 'storing'
+export type Phase = 'idle' | 'recalling' | 'thinking' | 'planning' | 'tools' | 'storing'

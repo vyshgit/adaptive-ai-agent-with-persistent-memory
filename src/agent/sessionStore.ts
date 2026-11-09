@@ -2,6 +2,7 @@ import type { Session, ChatMessage, MemoryContext, Proposal } from './types.ts'
 import type { CacheStorage } from './clientSafety.ts'
 import { browserStorage, newId, redactBrowserText, redactBrowserValue, scopedCacheKey } from './clientSafety.ts'
 import { validFilePath } from './project.ts'
+import { normalisePlan, normaliseQuestion } from './workflow.ts'
 
 export const SESSION_KEY = 'recallloop.sessions.v2'
 export const MAX_SESSIONS = 50
@@ -22,6 +23,7 @@ function safeMessage(raw: unknown): ChatMessage | null {
     memories: item.memory.memories.filter(hit => hit && typeof hit.blobId === 'string' && Number.isFinite(hit.distance)).slice(0, 20)
       .map(hit => ({ blobId: hit.blobId.slice(0, 160), text: '', distance: hit.distance, tier: hit.tier })),
     tokenEstimate: Number(item.memory.tokenEstimate) || 0,
+    lookups: Number.isInteger(item.memory.lookups) ? Math.min(2, Math.max(1, item.memory.lookups!)) : undefined,
     strategy: item.memory.strategy,
     memoryUnavailable: item.memory.memoryUnavailable === true,
   } : undefined
@@ -33,10 +35,12 @@ function safeMessage(raw: unknown): ChatMessage | null {
       baseHash: String(proposal.baseHash || ''), status: ['applied', 'rejected'].includes(proposal.status) ? proposal.status : 'pending' }))
   return { id: item.id.slice(0, 128), role: item.role as 'user' | 'assistant', content: redactBrowserText(item.content.slice(0, 40_000)),
     createdAt: item.createdAt, model: typeof item.model === 'string' ? item.model.slice(0, 128) : undefined,
+    mode: ['talk', 'plan', 'build'].includes(item.mode || '') ? item.mode : undefined,
     status: ['complete', 'stopped', 'error'].includes(item.status || '') ? item.status! : 'stopped', memory, proposals,
     tools: Array.isArray(item.tools) ? item.tools.filter(tool => tool && typeof tool.id === 'string' && typeof tool.name === 'string'
-      && ['running', 'done', 'error'].includes(tool.status)).slice(0, 12).map(tool => ({ id: tool.id.slice(0, 128), name: tool.name.slice(0, 64),
+      && ['running', 'done', 'error', 'blocked'].includes(tool.status)).slice(0, 12).map(tool => ({ id: tool.id.slice(0, 128), name: tool.name.slice(0, 64),
       status: tool.status === 'running' ? 'error' : tool.status, preview: redactBrowserText(String(tool.preview || '').slice(0, 500)) })) : [],
+    plan: normalisePlan(item.plan), question: normaliseQuestion(item.question),
     stored: item.stored ? { verbatim: Number(item.stored.verbatim) || 0, facts: Number(item.stored.facts) || 0, failed: Number(item.stored.failed) || 0,
       blobs: Array.isArray(item.stored.blobs) ? item.stored.blobs.filter(blob => blob && typeof blob.blobId === 'string'
         && typeof blob.namespace === 'string').slice(0, 100).map(blob => ({ blobId: blob.blobId.slice(0, 160), namespace: blob.namespace.slice(0, 128), tier: blob.tier })) : [],

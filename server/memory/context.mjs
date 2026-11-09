@@ -19,7 +19,8 @@ export function formatContext(hits, { maxTokens = 800, limit = 8 } = {}) {
   const lines = []
   let truncated = ordered.length > cap
   for (const memory of ordered.slice(0, cap)) {
-    const date = memory.createdAt?.slice(0, 10) || 'date unavailable'
+    // Keep the time: same-day corrections must not look equally recent.
+    const date = memory.createdAt || 'date unavailable'
     const line = `- [${date}; ${memory.tier}; blob=${memory.blobId}] ${memory.text.replace(/\r?\n/g, ' ')}`
     const proposed = `## Relevant memories (${lines.length + 1})\n${[...lines, line].join('\n')}`
     if (estimateTokens(proposed) > budget) { truncated = true; continue }

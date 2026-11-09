@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createLlm, toResponsesInput } from '../server/agent/llm.mjs'
 import { validateConnection } from '../server/agent/connections.mjs'
 import { TOOL_SCHEMAS } from '../server/agent/tools.mjs'
+import { runChat, validateChat } from '../server/agent/chat.mjs'
 
 const config = apiStyle => validateConnection({ baseUrl: 'https://api.openai.com/v1', apiKey: 'synthetic-provider-key', model: 'test-model', apiStyle })
 const collect = async iterator => { const result = []; for await (const item of iterator) result.push(item); return result }
@@ -30,6 +31,45 @@ test('Responses input encodes tool calls/results without sending system content 
   assert.deepEqual(input[3], { type: 'function_call_output', call_id: 'call-a', output: '{"content":"example"}' })
 })
 
+test('Responses tool rounds and follow-up turns resend local text without provider-stored response, message or reasoning state', async () => {
+  const connection = validateConnection({ baseUrl: 'https://agentrouter.org/v1', apiKey: 'synthetic-provider-key', model: 'test-model', apiStyle: 'responses' })
+  const project = { name: 'Stateless workspace', files: [{ path: 'src/a.ts', content: 'export const value = 1\n' }], activeFile: 'src/a.ts' }
+  const memory = { recall: async () => ({ context: 'No relevant memories yet.', memories: [], strategy: 'mock-lexical', meta: { tokenEstimate: 0 } }) }
+  let requests = 0
+  const llm = createLlm({ env: {}, fetchImpl: async (_url, request) => {
+    const body = JSON.parse(request.body)
+    assert.equal(body.store, false)
+    assert.equal(Object.hasOwn(body, 'previous_response_id'), false)
+    assert.equal(Object.hasOwn(body, 'conversation'), false)
+    assert.ok(body.input.every(item => !Object.hasOwn(item, 'id') && !Object.hasOwn(item, 'encrypted_content')
+      && !['reasoning', 'item_reference'].includes(item.type)))
+    assert.equal(JSON.stringify(body).includes('provider-only-'), false)
+    requests++
+    if (requests === 1) return json({ id: 'provider-only-response', status: 'completed', output: [
+      { type: 'reasoning', id: 'provider-only-reasoning', encrypted_content: 'provider-only-encrypted' },
+      { type: 'message', id: 'provider-only-message', content: [{ type: 'output_text', text: 'Inspecting the selected file.' }] },
+      { type: 'function_call', id: 'provider-only-function', call_id: 'call-read', name: 'read_file', arguments: '{"path":"src/a.ts"}' },
+    ] })
+    if (requests === 2) {
+      assert.deepEqual(body.input.find(item => item.type === 'function_call'), { type: 'function_call', call_id: 'call-read', name: 'read_file', arguments: '{"path":"src/a.ts"}' })
+      assert.match(body.input.find(item => item.type === 'function_call_output').output, /export const value = 1/)
+    } else {
+      assert.ok(body.input.some(item => item.role === 'assistant' && item.content[0].text.includes('The selected file defines value.')))
+      assert.equal(body.input.some(item => item.type === 'function_call'), false)
+    }
+    return json({ id: 'provider-only-next-response', status: 'completed', output: [
+      { type: 'message', id: 'provider-only-next-message', content: [{ type: 'output_text', text: 'The selected file defines value.' }] },
+    ] })
+  } })
+  const input = validateChat({ sessionId: 'stateless', message: 'Inspect the selected file.', project, capture: false, stream: false }, connection)
+  const events = await collect(runChat({ input, memory, llm, agentId: 'a', config: connection }))
+  const answer = events.filter(event => event.type === 'delta').map(event => event.data.text).join('')
+  const followUp = validateChat({ sessionId: 'stateless', message: 'Explain the value.', project, capture: false, stream: false,
+    history: [{ role: 'user', content: input.message }, { role: 'assistant', content: answer }] }, connection)
+  await collect(runChat({ input: followUp, memory, llm, agentId: 'a', config: connection }))
+  assert.equal(requests, 3)
+})
+
 test('Chat Completions SSE assembles fragmented tool IDs, names, and JSON arguments', async () => {
   const events = await run(async (url, request) => {
     assert.equal(url, 'https://api.openai.com/v1/chat/completions')
@@ -39,6 +79,7 @@ test('Chat Completions SSE assembles fragmented tool IDs, names, and JSON argume
     assert.equal(body.store, false)
     assert.equal(body.stream, true)
     assert.equal(body.messages[0].role, 'system')
+    assert.deepEqual(body.tools, TOOL_SCHEMAS)
     return sse([
       ': heartbeat\r\n\r\n',
       wire({ choices: [{ delta: { content: 'Hello 🌍', tool_calls: [{ index: 0, id: 'call-', function: { name: 'read_', arguments: '{"path":' } }] } }] }),
@@ -56,7 +97,9 @@ test('Responses SSE maps function arguments and completed output with the actual
     assert.equal(url, 'https://api.openai.com/v1/responses')
     const body = JSON.parse(request.body)
     assert.equal(body.instructions, messages[0].content)
-    assert.equal(body.tools[0].name, 'list_files')
+    assert.deepEqual(body.tools.map(tool => tool.name), TOOL_SCHEMAS.map(tool => tool.function.name))
+    assert.equal(body.tools.find(tool => tool.name === 'plan_task').parameters.properties.steps.maxItems, 6)
+    assert.equal(body.tools.find(tool => tool.name === 'ask_user').parameters.properties.options.maxItems, 4)
     assert.equal(body.store, false)
     return sse([
       wire({ type: 'response.output_text.delta', delta: 'Inspecting. ' }),

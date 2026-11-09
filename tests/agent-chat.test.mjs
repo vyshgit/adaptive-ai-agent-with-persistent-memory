@@ -9,7 +9,7 @@ import { hash } from '../server/memory/consolidate.mjs'
 
 const config = validateConnection({ mode: 'mock' })
 const project = { name: 'Test workspace', activeFile: 'src/a.ts', files: [{ path: 'src/a.ts', content: 'export const value = 1\n' }] }
-const input = overrides => validateChat({ sessionId: 'session-one', message: 'Please fix the code.', project, ...overrides }, config)
+const input = overrides => validateChat({ sessionId: 'session-one', message: 'Please fix the code.', mode: 'build', project, ...overrides }, config)
 const collect = async iterator => { const events = []; for await (const event of iterator) events.push(event); return events }
 const emptyRecall = () => ({ context: 'No relevant memories yet.', memories: [], strategy: 'mock-lexical', meta: { tokenEstimate: 0 } })
 const memoryFixture = overrides => ({ recall: async () => emptyRecall(), ingest: async () => ({ stored: { verbatim: 2, facts: 1, failed: 0 }, blobs: [] }),

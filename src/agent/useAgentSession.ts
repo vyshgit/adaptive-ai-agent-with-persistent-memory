@@ -4,6 +4,7 @@ import { createSession, loadSessions, saveSessions, clearSessionCache, MAX_SESSI
 import { newId, redactBrowserText, flushCacheOnExit } from './clientSafety.ts'
 import { agentFetch, readAgentSse, responseError } from './api.ts'
 import { selectedProject } from './project.ts'
+import { historyForMessages, normalisePlan, normaliseQuestion } from './workflow.ts'
 
 interface SendOptions { model: string; project: Project; capture: boolean; stream: boolean; mode: WorkspaceMode }
 
@@ -50,11 +51,9 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
     const now = new Date().toISOString()
     const userIndex = retryUserId ? session.messages.findIndex(message => message.id === retryUserId && message.role === 'user') : -1
     const user = userIndex >= 0 ? session.messages[userIndex] : { id: newId(), role: 'user' as const, content, createdAt: now, status: 'complete' as const }
-    const history = (userIndex >= 0 ? session.messages.slice(0, userIndex) : session.messages)
-      .filter(message => message.status === 'complete' && message.content.trim()).slice(-20)
-      .map(message => ({ role: message.role, content: message.content.slice(0, 20_000) }))
+    const history = historyForMessages(userIndex >= 0 ? session.messages.slice(0, userIndex) : session.messages)
     const assistantId = newId()
-    const assistant: ChatMessage = { id: assistantId, role: 'assistant', content: '', createdAt: now, status: 'pending', model: options.model, tools: [], proposals: [] }
+    const assistant: ChatMessage = { id: assistantId, role: 'assistant', content: '', createdAt: now, status: 'pending', model: options.model, mode: options.mode, tools: [], proposals: [] }
     updateSession(sessionId, old => ({ ...old, updatedAt: now, model: options.model,
       title: old.messages.some(message => message.role === 'user') ? old.title : content.slice(0, 60),
       messages: [...old.messages, ...(userIndex >= 0 ? [] : [user]), assistant].slice(-MAX_MESSAGES) }))
@@ -76,6 +75,18 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
         setPhase('tools')
       }
       if (incoming.type === 'proposal') updateMessage(sessionId, assistantId, old => ({ ...old, proposals: [...(old.proposals || []), incoming.data].slice(0, 6) }))
+      if (incoming.type === 'plan') {
+        const plan = normalisePlan(incoming.data)
+        if (!plan) throw new Error('The agent returned an invalid working plan. No steps were executed.')
+        updateMessage(sessionId, assistantId, old => ({ ...old, plan, status: 'streaming' }))
+        setPhase('planning')
+      }
+      if (incoming.type === 'question') {
+        const question = normaliseQuestion(incoming.data)
+        if (!question) throw new Error('The agent returned an invalid clarification. No reply was submitted.')
+        updateMessage(sessionId, assistantId, old => ({ ...old, question, status: 'streaming' }))
+        setPhase('thinking')
+      }
       if (incoming.type === 'done') {
         done = true
         updateMessage(sessionId, assistantId, old => ({ ...old, status: 'complete', model: incoming.data.model }))
@@ -99,6 +110,8 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
         if (data.memory) event('memory', data.memory)
         for (const tool of data.tools || []) event('tool', tool)
         for (const proposal of data.proposals || []) event('proposal', proposal)
+        if (data.plan) event('plan', data.plan)
+        if (data.question) event('question', data.question)
         event('delta', { text: data.answer || '' })
         event('done', { model: data.model, finishReason: data.finishReason })
         if (data.stored) event('stored', data.stored)
