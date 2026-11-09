@@ -1,6 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './harness.mjs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { installWallet, signIn, demo, send, newSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
+import { installWallet, signIn, demo, send, newSession, openPanel, openSettings, leaveSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
+import { installConnectionFixture } from './fixtures.mjs'
 
 test('signed wallet onboarding and credential forms keep secrets out of browser caches and exports', async ({ page }) => {
   const checkErrors = failOnPageErrors(page)
@@ -14,47 +15,31 @@ test('signed wallet onboarding and credential forms keep secrets out of browser 
 
   // Only form-wiring responses are simulated here. HTTP tests exercise the real
   // staged upstream verification. This test does NOT claim live API compatibility.
-  const captured = []
   const keys = { tatum: 'synthetic-browser-tatum-key', delegate: '1'.repeat(64), model: 'synthetic-browser-model-key' }
-  let tatum = false, memory = false, model = false
-  await page.route('**/api/agent/**', async route => {
-    const path = new URL(route.request().url()).pathname
-    if (['/api/agent/connections/tatum', '/api/agent/connections/memwal', '/api/agent/connect'].includes(path)) {
-      captured.push({ path, body: route.request().postDataJSON() })
-      if (path.endsWith('/tatum')) tatum = true
-      if (path.endsWith('/memwal')) memory = true
-      if (path.endsWith('/connect')) model = true
-      return route.fulfill({ json: { success: true, connection: { mode: 'live', verified: true } } })
-    }
-    if (path === '/api/agent/status') {
-      const response = await route.fetch()
-      const data = await response.json()
-      if (tatum) data.tatum = { configured: true, verified: true, checkpoint: { checkpoint: '123' } }
-      if (memory) data.memoryConnection = { accountId: '0xa', publicKey: '2'.repeat(64), owner: pair.toSuiAddress(), verified: true }
-      if (model) data.llm = { mode: 'live', baseUrl: 'https://agentrouter.org/v1', apiStyle: 'responses', model: 'synthetic-model',
-        models: [{ id: 'synthetic-model', label: 'synthetic-model' }], verified: true, toolsEnabled: true }
-      return route.fulfill({ response, json: data })
-    }
-    return route.continue()
-  })
-  await page.getByRole('button', { name: 'Workspace settings', exact: true }).click()
-  const settings = page.getByRole('dialog', { name: 'Workspace settings', exact: true })
+  const fixture = await installConnectionFixture(page)
+  const settings = await openSettings(page, 'Tatum')
   await settings.getByLabel('Tatum API key', { exact: true }).fill(keys.tatum)
   await settings.getByRole('button', { name: 'Verify & connect Tatum', exact: true }).click()
+  await settings.getByRole('button', { name: 'Reconnect Tatum', exact: true }).click()
   await expect(settings.getByLabel('Tatum API key', { exact: true })).toHaveValue('')
+  await settings.getByRole('tab', { name: 'Walrus Memory', exact: true }).click()
   await settings.getByRole('textbox', { name: 'Walrus Memory account object ID' }).fill('0xa')
   await settings.getByLabel('Delegate private key', { exact: true }).fill(keys.delegate)
   await settings.getByRole('button', { name: 'Verify & connect Walrus', exact: true }).click()
+  await settings.getByRole('button', { name: 'Reconnect Walrus', exact: true }).click()
   await expect(settings.getByLabel('Delegate private key', { exact: true })).toHaveValue('')
+  await settings.getByRole('tab', { name: 'Model', exact: true }).click()
   await settings.getByLabel('Model API key', { exact: true }).fill(keys.model)
-  await settings.getByRole('textbox', { name: 'Model ID', exact: true }).fill('synthetic-model')
-  await settings.getByRole('button', { name: 'Connect model API', exact: true }).click()
+  await settings.getByLabel('Model ID', { exact: true }).fill('synthetic-model')
+  await settings.getByRole('button', { name: 'Connect & verify model', exact: true }).click()
+  await settings.getByRole('button', { name: 'Reconnect model', exact: true }).click()
   await expect(settings.getByLabel('Model API key', { exact: true })).toHaveValue('')
-  expect(captured.map(item => item.body)).toEqual([
+  expect(fixture.mutations().map(item => item.body)).toEqual([
     { apiKey: keys.tatum }, { accountId: '0xa', delegateKey: keys.delegate },
-    { mode: 'live', baseUrl: 'https://agentrouter.org/v1', apiKey: keys.model, model: 'synthetic-model', apiStyle: 'responses', toolsEnabled: true },
+    { mode: 'live', baseUrl: 'https://agentrouter.org/v1', apiKey: keys.model, model: 'synthetic-model', apiStyle: 'responses', toolsEnabled: true, checkCapabilities: false },
   ])
   await settings.getByRole('button', { name: 'Done', exact: true }).click()
+  await openPanel(page)
   const editor = page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })
   await editor.fill(`// Accidentally pasted keys: ${Object.values(keys).join(' ')}\n`)
   await expect(editor).toHaveValue('// Accidentally pasted keys: [REDACTED] [REDACTED] [REDACTED]\n')
@@ -78,11 +63,15 @@ test('offline recall loop proposes reviewable code, downloads exact changes, and
   await expect(taught).toContainText('facts confirmed')
   await newSession(page)
   await page.getByRole('button', { name: 'Build', exact: true }).click()
+  await openPanel(page)
   const before = await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).inputValue()
   const answer = await send(page, 'Use my TypeScript and npm preferences to fix greet for missing and empty names.')
   await expect(answer).toContainText(/Recalled \d+ mock memor/)
+  await expect(answer.getByRole('region', { name: 'Working plan', exact: true })).toContainText('Proposed steps, not completed actions')
+  await expect(answer).toContainText('Review required')
   await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).toHaveValue(before)
   await answer.getByRole('button', { name: 'Review 1 change', exact: true }).click()
+  await page.screenshot({ path: testInfo.outputPath('review-proposal-desktop-dark.png') })
   const patch = await downloadedText(page, () => page.getByRole('button', { name: 'Download patch', exact: true }).click())
   expect(patch.name).toBe('recallloop-change.patch')
   expect(patch.text).toContain('name?: string')
@@ -91,6 +80,7 @@ test('offline recall loop proposes reviewable code, downloads exact changes, and
   await page.getByRole('tab', { name: 'Files', exact: true }).click()
   const after = await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).inputValue()
   expect(after).toContain("const displayName = name?.trim() || 'friend'")
+  await page.screenshot({ path: testInfo.outputPath('applied-browser-files-desktop-dark.png') })
   const file = await downloadedText(page, () => page.getByRole('button', { name: 'Download current file', exact: true }).click())
   expect(file.text).toBe(after)
   const backup = await downloadedText(page, () => page.getByRole('button', { name: 'Export browser project as JSON' }).click())
@@ -107,7 +97,8 @@ test('offline recall loop proposes reviewable code, downloads exact changes, and
   const recalled = await send(page, 'Which TypeScript npm preferences and regression test lessons do you remember?')
   await expect(recalled).toContainText('keep npm changes small')
   await expect(recalled.getByRole('button', { name: /^Review \d+ change/ })).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Memory', exact: true }).click()
+  const memory = await openPanel(page, 'memory')
+  await memory.getByText('Index & Mainnet evidence tools', { exact: true }).click()
   await expect(page.getByRole('button', { name: 'Seed 12 Mainnet memories', exact: true })).toBeDisabled()
   await expect(page.getByText('10+ Mainnet', { exact: true })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('offline-workspace.png') })
@@ -118,6 +109,7 @@ test('browser-only import/export, safe paths, cache reload, and editor keyboard 
   const checkErrors = failOnPageErrors(page)
   await holdCacheTimers(page)
   await demo(page)
+  await openPanel(page)
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: 'Import text files', exact: true }).click()
   await (await chooser).setFiles([
@@ -143,11 +135,13 @@ test('browser-only import/export, safe paths, cache reload, and editor keyboard 
   await editor.press('Tab')
   await expect(editor).not.toBeFocused()
   const exported = await downloadedText(page, () => page.getByRole('button', { name: 'Export browser project as JSON' }).click())
+  await page.getByText('Project backups', { exact: true }).click()
   const load = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: 'Load a RecallLoop JSON project' }).click()
   await (await load).setFiles({ name: 'recallloop-project.json', mimeType: 'application/json', buffer: Buffer.from(exported.text) })
   await page.getByRole('dialog').getByRole('button', { name: 'Import 2 files', exact: true }).click()
   await page.reload()
+  await openPanel(page)
   await expect(page.getByRole('textbox', { name: 'Edit src/second.ts', exact: true })).toHaveValue('const answer = 42\n')
   expect(JSON.stringify(await cachedValues(page))).not.toContain('NEVER_IMPORT')
   checkErrors()
@@ -157,6 +151,7 @@ test('pending project and chat caches flush before reload and when the page beco
   const checkErrors = failOnPageErrors(page)
   await holdCacheTimers(page)
   await demo(page)
+  await openPanel(page)
   const pendingFile = '// PENDING_RELOAD_EDITOR\n'
   const lesson = 'I prefer TypeScript and npm: PENDING_RELOAD_LESSON.'
   const editor = page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })
@@ -168,6 +163,7 @@ test('pending project and chat caches flush before reload and when the page beco
   expect(before).not.toContain(lesson)
 
   await page.reload()
+  await openPanel(page)
   await expect(editor).toHaveValue(pendingFile)
   await expect(page.locator('article')).toHaveCount(2)
   await expect(page.locator('article').first()).toContainText(lesson)
@@ -195,21 +191,21 @@ test('cross-tab wallet changes reject stale requests and reload the correct isol
   const a = Ed25519Keypair.generate(), b = Ed25519Keypair.generate()
   await installWallet(page, [a])
   await signIn(page)
+  await openPanel(page)
   await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).fill('// ONLY_WALLET_A\n')
-  await page.getByRole('button', { name: 'Workspace settings', exact: true }).click()
+  await openSettings(page, 'Advanced')
   await page.getByRole('dialog').getByRole('button', { name: 'Use scripted mock model', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Done', exact: true }).click()
   const oldAuth = await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())
   await expect.poll(async () => JSON.stringify(await cachedValues(page))).toContain('ONLY_WALLET_A')
-  await page.getByRole('textbox', { name: 'Message the coding agent' }).fill('ONLY_WALLET_A stale draft must not become B history')
+  await page.getByRole('textbox', { name: 'Message RecallLoop' }).fill('ONLY_WALLET_A stale draft must not become B history')
   // Model a background tab that has not received its next focus event yet.
   await page.evaluate(() => window.addEventListener('focus', event => event.stopImmediatePropagation(), true))
   const other = await context.newPage()
   await installWallet(other, [b])
   await other.goto('/#/agent')
-  await other.getByRole('button', { name: 'Log out and clear API connections' }).click()
-  await other.getByRole('button', { name: 'Connect & sign in', exact: true }).click()
-  await expect(other.getByText('Wallet workspace · Talk / Plan / Build', { exact: true })).toBeVisible()
+  await leaveSession(other)
+  await signIn(other)
   const stale = await page.evaluate(async tag => {
     const response = await fetch('/api/agent/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-RecallLoop-Session': tag }, body: '{}' })
     return { status: response.status, data: await response.json() }
@@ -217,22 +213,25 @@ test('cross-tab wallet changes reject stale requests and reload the correct isol
   expect(stale.status).toBe(409)
   expect(stale.data.code).toBe('session_changed')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Model for this turn' })).toHaveValue('')
+  await openPanel(page)
   await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).not.toHaveValue('// ONLY_WALLET_A\n')
-  await expect(page.getByRole('textbox', { name: 'Message the coding agent' })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Message RecallLoop' })).toHaveValue('')
   await expect(page.locator('article')).toHaveCount(0)
   const bAuth = await other.evaluate(async () => (await fetch('/api/agent/auth/session')).json())
   expect(bAuth.address).toBe(b.toSuiAddress())
   // A's old Wallet Standard connection must not bind to B's new session.
-  await page.evaluate(() => window.recallloopDisconnectWallet())
+  await page.evaluate(() => { window.recallloopDisconnectWallet(); window.recallloopFireRetiredWalletChange() })
   const afterDisconnect = await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())
   expect(afterDisconnect.sessionTag).toBe(bAuth.sessionTag)
   expect(afterDisconnect.address).toBe(b.toSuiAddress())
-  await expect(page.getByText('Wallet workspace · Talk / Plan / Build', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Log out and clear API connections' }).click()
-  await page.getByRole('button', { name: 'Connect & sign in', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Wallet session details', exact: true })).toBeVisible()
+  await leaveSession(page)
+  await signIn(page)
+  await openPanel(page)
   await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).toHaveValue('// ONLY_WALLET_A\n')
   await expect(page.getByRole('combobox', { name: 'Model for this turn' })).toHaveValue('')
-  await expect(page.getByRole('textbox', { name: 'Message the coding agent' })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Message RecallLoop' })).toHaveValue('')
   checkErrors()
 })
 
@@ -244,7 +243,7 @@ test('mobile panels, themes and keyboard-accessible settings stay within the vie
     await page.setViewportSize({ width, height: 844 })
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
     expect(overflow).toBe(false)
-    const composer = await page.getByRole('textbox', { name: 'Message the coding agent' }).boundingBox()
+    const composer = await page.getByRole('textbox', { name: 'Message RecallLoop' }).boundingBox()
     expect(composer.y + composer.height).toBeLessThanOrEqual(844)
     await page.getByRole('combobox', { name: 'Workspace view' }).selectOption('project')
     await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).toBeVisible()
@@ -252,6 +251,9 @@ test('mobile panels, themes and keyboard-accessible settings stay within the vie
     await expect(page.getByRole('heading', { name: 'Portable memory', exact: true })).toBeVisible()
     await page.getByRole('combobox', { name: 'Workspace view' }).selectOption('chat')
   }
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.getByRole('button', { name: 'Switch to light theme' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByRole('button', { name: 'Switch to dark theme' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await page.getByRole('button', { name: 'Workspace settings', exact: true }).click()
@@ -270,12 +272,14 @@ test('stopping a streamed turn preserves a partial answer without capture and re
   const checkErrors = failOnPageErrors(page)
   await demo(page)
   await page.getByRole('button', { name: 'Talk', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Message the coding agent' }).fill('Tell me my preferences')
-  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Message RecallLoop' }).fill('Tell me my preferences')
+  // Keyboard actions do not wait for pointer stability on a very short mock
+  // stream. This still aborts the real server turn; no chat response is simulated.
+  await page.getByRole('textbox', { name: 'Message RecallLoop' }).press('Enter')
   await expect(page.locator('article').last()).toContainText('Mock model — deterministic')
-  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).press('Enter')
   await expect(page.getByText('Stopped · partial answer', { exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: 'Memory', exact: true }).click()
+  await openPanel(page, 'memory')
   await expect(page.getByRole('region', { name: 'Memory inventory' })).toContainText(/0\s*listed memories/)
   await page.getByRole('button', { name: 'Retry this turn', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeHidden()

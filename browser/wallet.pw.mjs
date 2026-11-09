@@ -1,0 +1,119 @@
+import { test, expect } from './harness.mjs'
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
+import { installWallet, signIn, openPanel, deferred, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
+
+test('wallet connection, personal-message signing and ownership verification have distinct progress states', async ({ page }) => {
+  const checkErrors = failOnPageErrors(page)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const connect = deferred(), sign = deferred(), verify = deferred()
+  const verifyStarted = deferred()
+  const [pair] = await installWallet(page, undefined, { onConnect: () => connect.promise, onSign: () => sign.promise })
+  await page.route('**/api/agent/auth/verify', async route => { verifyStarted.resolve(); await verify.promise; await route.continue() })
+  try {
+    await page.goto('/#/agent')
+    const gate = page.getByRole('region', { name: 'Wallet sign-in', exact: true })
+    await gate.getByRole('button', { name: 'Connect Wallet', exact: true }).click()
+    await expect(gate.getByRole('status')).toContainText('Connecting wallet…')
+    await expect(gate.getByRole('button', { name: 'Connect Wallet', exact: true })).toBeDisabled()
+    expect(await gate.locator('.animate-spin').evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+    connect.resolve()
+    await expect(gate.getByRole('status')).toContainText('Sign the personal message in your wallet…')
+    await expect(gate).toContainText(pair.toSuiAddress())
+    await expect(gate).toContainText('authentication, not a transaction')
+    sign.resolve()
+    await verifyStarted.promise
+    await expect(gate.getByRole('status')).toContainText('Verifying wallet ownership…')
+    verify.resolve()
+    await expect(page.getByRole('button', { name: 'Wallet session details', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Wallet session details', exact: true }).click()
+    const details = page.getByRole('dialog', { name: 'Wallet session', exact: true })
+    await expect(details).toContainText(pair.toSuiAddress())
+    await expect(details).toContainText('Sui Mainnet')
+    await expect(details).toContainText('not a transaction, grants no spending permission')
+    await expect(details.getByRole('button', { name: 'Copy wallet address', exact: true })).toBeVisible()
+    const messages = await page.evaluate(() => window.recallloopSignedMessages)
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toContain('This is not a transaction.')
+    checkErrors()
+  } finally { connect.resolve(); sign.resolve(); verify.resolve() }
+})
+
+test('wallet connection and signature declines remain actionable and never create an authenticated session', async ({ page }) => {
+  const checkErrors = failOnPageErrors(page)
+  await installWallet(page)
+  await page.goto('/#/agent')
+  const gate = page.getByRole('region', { name: 'Wallet sign-in', exact: true })
+  await page.evaluate(() => { window.recallloopWalletBehavior.connectError = 'Synthetic wallet connection declined.' })
+  await gate.getByRole('button', { name: 'Connect Wallet', exact: true }).click()
+  await expect(gate.getByRole('alert')).toContainText('wallet connection declined')
+  await expect(gate.getByRole('button', { name: 'Connect Wallet', exact: true })).toBeEnabled()
+  expect((await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())).authenticated).toBe(false)
+  await page.evaluate(() => { window.recallloopWalletBehavior.connectError = ''; window.recallloopWalletBehavior.signError = 'Synthetic personal-message signature declined.' })
+  await gate.getByRole('button', { name: 'Connect Wallet', exact: true }).click()
+  await expect(gate.getByRole('alert')).toContainText('personal-message signature declined')
+  await expect(gate.getByRole('button', { name: 'Sign in with this account', exact: true })).toBeEnabled()
+  expect((await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())).authenticated).toBe(false)
+  await page.evaluate(() => { window.recallloopWalletBehavior.signError = '' })
+  await gate.getByRole('button', { name: 'Sign in with this account', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Wallet session details', exact: true })).toBeVisible()
+  checkErrors()
+})
+
+test('multi-account onboarding signs only the selected Sui Mainnet account', async ({ page }) => {
+  const checkErrors = failOnPageErrors(page)
+  const pairs = [Ed25519Keypair.generate(), Ed25519Keypair.generate()]
+  await installWallet(page, pairs)
+  await signIn(page, pairs[1].toSuiAddress())
+  const auth = await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())
+  expect(auth.address).toBe(pairs[1].toSuiAddress())
+  const messages = await page.evaluate(() => window.recallloopSignedMessages)
+  expect(messages).toHaveLength(1)
+  expect(messages[0]).toContain(`Wallet address: ${pairs[1].toSuiAddress()}\n`)
+  expect(messages[0]).not.toContain(pairs[0].toSuiAddress())
+  checkErrors()
+})
+
+test('disconnect reports server failures inside the wallet dialog and ends the session before optional extension removal', async ({ page }, testInfo) => {
+  const checkErrors = failOnPageErrors(page)
+  await holdCacheTimers(page)
+  const observedSessions = []
+  await installWallet(page, undefined, { withDisconnect: true, onDisconnect: async () => {
+    observedSessions.push(await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json()))
+  } })
+  await signIn(page)
+  await openPanel(page)
+  await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).fill('// PENDING_WALLET_DISCONNECT_PROJECT\n')
+  await page.evaluate(() => { window.recallloopWalletBehavior.disconnectError = 'Synthetic extension permission removal declined.' })
+  const secondRequest = deferred(), release = deferred()
+  let attempts = 0
+  await page.route('**/api/agent/auth/logout', async route => {
+    if (++attempts === 1) return route.fulfill({ status: 503, json: { code: 'server_unavailable', error: 'Synthetic RecallLoop server unavailable.', retryable: true } })
+    secondRequest.resolve()
+    await release.promise
+    await route.continue()
+  })
+  try {
+    await page.getByRole('button', { name: 'Wallet session details', exact: true }).click()
+    const details = page.getByRole('dialog', { name: 'Wallet session', exact: true })
+    await details.getByRole('button', { name: 'Disconnect wallet', exact: true }).click()
+    await expect(details.getByRole('alert')).toContainText('server unavailable')
+    await expect(details.getByRole('alert')).toContainText('has not been confirmed disconnected')
+    await expect(details.getByRole('button', { name: 'Disconnect wallet', exact: true })).toBeEnabled()
+    expect((await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())).authenticated).toBe(true)
+    expect((await page.evaluate(() => window.recallloopWalletCalls)).disconnect).toBe(0)
+    await page.screenshot({ path: testInfo.outputPath('wallet-disconnect-error.png') })
+    await details.getByRole('button', { name: 'Disconnect wallet', exact: true }).click()
+    await secondRequest.promise
+    await expect(details.getByRole('status')).toContainText('Ending the RecallLoop session')
+    await expect(details.getByRole('button', { name: 'Disconnect wallet', exact: true })).toBeDisabled()
+    release.resolve()
+    await expect(page.getByRole('region', { name: 'Wallet sign-in', exact: true })).toBeVisible()
+    await expect.poll(() => observedSessions.length).toBe(1)
+    expect(observedSessions[0].authenticated).toBe(false)
+    expect((await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())).authenticated).toBe(false)
+    expect(JSON.stringify(await cachedValues(page))).toContain('PENDING_WALLET_DISCONNECT_PROJECT')
+    await page.evaluate(() => window.recallloopFireRetiredWalletChange())
+    expect(attempts).toBe(2)
+    checkErrors()
+  } finally { release.resolve() }
+})
