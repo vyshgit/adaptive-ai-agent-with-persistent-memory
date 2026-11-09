@@ -30,6 +30,12 @@ and last at most one hour. A server restart requires a new sign-in and API recon
 Logout/expiry abort attached requests, destroy clients, and clear credential references.
 This is not a claim of cryptographically erasing immutable strings from physical memory.
 
+The UI distinguishes **Connecting wallet**, **Requesting sign-in challenge**, personal-message
+signing, and ownership verification. The wallet dialog shows address/network/expiry and
+actionable disconnect errors. It waits for server logout before optionally removing wallet
+extension permission; an extension refusal cannot revive that server session. Retired
+Wallet Standard callbacks are bound to their original session and ignored after it changes.
+
 ### Stable identity and stale tabs
 
 `walletAgentId(address)` uses the canonical address to derive a stable, hashed namespace
@@ -72,18 +78,22 @@ Enter credentials only on localhost or HTTPS on a trusted server:
    access. Dedicated delegate private keys only: no seed phrase, and the signed-in wallet's
    own Ed25519 key is rejected. The user must intentionally supply the revocable delegate;
    wallet login alone does not grant access to memory.
-3. **Model:** validate the provider URL/key/model and discover a bounded model list. Public
-   connection state contains no key. Discovery readiness does not prove generation/tool
-   support. No AgentRouter client impersonation is implemented.
+3. **Model:** validate the provider URL/key/model, attempt bounded discovery, and stage the
+   key until an actual small non-streamed coding response succeeds. Public connection state
+   contains no key. Discovery readiness does not prove generation/tool support. Optional
+   streaming/non-executing function probes are separate, user-initiated checks. A failed
+   replacement preserves the saved connection; failed re-verification retains its key but
+   clears the verified indicator. No AgentRouter client impersonation is implemented.
 
 Connections are staged: an upstream result is committed only while the originating session
 remains active. Late verification cannot reinstall a logged-out user's connection. Replaced
 or uncommitted clients/keys are cleared. Disconnecting Tatum also removes its dependent
 MemWal connection. Model disconnect has no owner-credential fallback.
 
-Key fields are temporary React/tab state; successful forms clear them. A tab-memory buffer
-remembers entered keys for best-effort redaction until the wallet session changes. The
-server keeps keys in that session's memory until logout/expiry/restart, and response-time
+Key fields are temporary React/tab state; submitted forms clear them after success, failure,
+or cancellation. A tab-memory buffer remembers submitted keys for best-effort redaction
+until the wallet session changes. The server keeps keys in that session's memory until
+logout/expiry/restart, and response-time
 redaction retains request-time snapshots to handle logout races. Keys are not deliberately
 persisted in `localStorage`, `sessionStorage`, exports, prompts, or Walrus. No `VITE_*`
 secret or public frontend environment key is used. This does not detect every unrelated
@@ -92,6 +102,10 @@ secret: never place secrets in chat, selected files, or a taught memory.
 Provider calls, blockchain reads, and MemWal SDK operations happen **server-side**. The
 browser calls only the same-origin workspace API. A trusted server necessarily sees the
 submitted provider/delegate keys; wallet login does not make it trustless.
+
+Assistant Markdown is untrusted display content. Raw HTML is ignored, remote images are
+not loaded, and links are limited to explicit credential-free HTTP(S) URLs. Formatting never
+executes code or changes the browser-only approval boundary. See [client formatting](API.md#client-response-formatting).
 
 ## Origin and deployment policy
 

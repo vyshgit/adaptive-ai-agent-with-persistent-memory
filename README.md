@@ -1,17 +1,20 @@
 # RecallLoop
 
-A wallet-authenticated **Talk / Plan / Build** workspace for coding workflows that remember
-preferences, corrections, and lessons across sessions. Built for **Tatum × Walrus Total
-Recall, Track 2 — Smart Agents for Real Life**.
+A wallet-authenticated, memory-first **Talk / Plan / Build** workspace for everyday questions,
+planning, and reviewed coding. Remember preferences, corrections, and lessons across sessions.
+Built for **Tatum × Walrus Total Recall, Track 2 — Smart Agents for Real Life**.
 
-RecallLoop recalls memory **before** answering, shows the supporting blob citations, and
-captures completed turns through Walrus Memory. Build can propose changes to selected
-project files; you review them before applying them **in the browser**. This is contextual
-adaptation, not model retraining.
+RecallLoop recalls memory **before** answering, shows supporting blob citations, and shares a
+working plan or asks about missing essentials when useful. Actual tool activity stays visible;
+a clarification pauses the turn until you reply. Completed replies and clarification turns
+can be captured through Walrus Memory. Build can propose changes to selected project files;
+you review them before applying them **in the browser**. This is contextual adaptation, not
+model retraining.
 
-> **Validation status:** the credential-free implementation passes 135 unit/HTTP/CLI tests
-> and 7 Chromium browser scenarios. Real wallet-extension onboarding, live model generation,
-> authorized MemWal access, Tatum reads, and Mainnet writes still need live validation.
+> **Validation status (9 November 2026):** the credential-free implementation passes
+> **180 unit/HTTP/CLI tests** and **31 Chromium scenarios**. Typecheck and production build
+> also pass locally. Real wallet-extension onboarding, live model generation, authorized
+> MemWal access, Tatum reads, and Mainnet writes still need live validation.
 > No verified Mainnet evidence has been generated. See [validation](docs/VALIDATION.md)
 > and the [submission checklist](docs/SUBMISSION_CHECKLIST.md).
 
@@ -54,24 +57,36 @@ variables take precedence. [.env.example](.env.example) documents operator polic
 
 Use localhost or HTTPS on a server you trust. **Do not share keys in chat or commit them.**
 
-1. Install/unlock a Sui Wallet Standard wallet, select Mainnet, and choose **Connect & sign
-   in**. Approve the expiring personal-message challenge. This login is not a transaction
-   and grants no spending permission.
-2. Open **Workspace settings** and connect your **Tatum Mainnet API key** from
-   [dashboard.tatum.io](https://dashboard.tatum.io). The server verifies a Sui checkpoint.
-3. Create a Mainnet account and dedicated, revocable delegate key at
+1. Install/unlock a Sui Wallet Standard wallet, select Mainnet, and choose **Connect Wallet**.
+   If several accounts are available, select one and choose **Sign in with this account**.
+   Approve the expiring personal-message challenge. Login is not a transaction and grants no
+   spending permission. The wallet button shows your address/network and opens session
+   details, including disconnect progress and errors.
+2. Open **Workspace settings → Model**. Select AgentRouter or another supported provider;
+   its API base/protocol and official key/model/documentation links are populated for you.
+   Enter that provider's key and an **exact model ID available to your account**, then choose
+   **Connect & verify model**. One bounded coding request verifies generation; billing and
+   quotas apply. Streaming/tools are separate, optional checks. Discovery never verifies
+   generation, and no account-specific AgentRouter default or RecallLoop approval is claimed.
+   See [provider setup](docs/PROVIDER_SETUP.md) for endpoints, approval, and safe diagnostics.
+3. When you want portable memory, open **Workspace settings → Tatum** and connect your
+   **Tatum Mainnet API key** from [dashboard.tatum.io](https://dashboard.tatum.io). The server
+   verifies a Sui checkpoint. A model can work without Tatum or Walrus Memory.
+4. Create a Mainnet account and dedicated, revocable delegate key at
    [memory.walrus.xyz/dashboard](https://memory.walrus.xyz/dashboard). Enter the **account
-   object ID** and **delegate private key**, not your wallet's private key or seed phrase.
+   object ID** and **delegate private key** in **Workspace settings → Walrus Memory**, not
+   your wallet's private key or seed phrase.
    The account must belong to the signed-in wallet. RecallLoop checks the official Sui
    account type/owner and the delegate's signed metadata access before installing it.
-4. Connect **AgentRouter** or another supported OpenAI-compatible model API. For
-   AgentRouter's `gpt-6.1-sol`, use `https://agentrouter.org/v1` and **Responses**, not Chat
-   Completions. AgentRouter may require approval for this app; RecallLoop does not
-   impersonate an approved client. You can instead select another provider or the scripted
-   mock model. Model discovery does not prove generation or tool compatibility.
+   Account creation/delegate grants in the external dashboard can involve transactions and
+   costs; RecallLoop's login signature does not authorize them.
 
 Credentials are held in temporary tab/form memory and an isolated, one-hour server session,
-not browser caches or project exports. Successful connection forms clear their key fields.
+not browser caches or project exports. Submitted connection forms clear their key fields,
+including failed/cancelled checks. Model, Tatum, and Walrus have separate verification and
+disconnect controls. Tatum disconnect also removes dependent Walrus authorization; none of
+these disconnect actions deletes remote memories. Closing/cancelling refreshes saved status
+because it can race a completed server check; it does not promise rollback.
 Logout, expiry, or a server restart drops connections; reconnect APIs after signing in again.
 Server-owner environment keys are **never** used by a wallet workspace.
 
@@ -96,32 +111,74 @@ orchestration, not Mainnet durability. For a live portability check, restart the
 use a fresh browser, sign in with the **same wallet**, reconnect the same account, and recall
 without supplying the old conversation. See [live test steps](docs/VALIDATION.md#live-manual-validation).
 
+### Everyday planning, without repeated introductions
+
+In Talk, teach a public-safe example: “My departure city is London. I prefer short trips and
+EUR prices.” Start a new session and choose **Plan a short trip**, or ask to plan a quick trip
+to Alaska. The deterministic offline example recalls the departure city before asking for
+missing dates. Missing, uncertain, conflicting, or home-only location context needs a
+clarification, not a guessed departure; explicit corrections override older memories.
+
+**Suggested replies fill the composer only.** You can edit them or write your own, then press
+Send to continue. A working plan is a set of proposed steps, not completed actions or approval.
+With tools disabled, plans and questions appear as ordinary reply text. Travel suggestions
+are drafts: RecallLoop has no web search, live fares/weather/availability, booking, purchasing,
+or transaction tools. The scripted example demonstrates the loop, not general travel expertise.
+
 ## Workspace capabilities and boundaries
+
+The default workspace is dark and conversation-first, with a collapsible **Sessions**
+sidebar. **Files**, **Review**, and **Memory** open on demand from the toolbar; mobile uses
+the **Workspace view** selector. Panel collapse keeps drafts and project edits. Stored light
+preference is honored, dialogs support keyboard navigation/focus restoration, and motion
+respects reduced-motion preferences. Short entry/panel transitions, subtle button feedback,
+and dialog-backdrop blur add depth; reading and editing surfaces remain solid.
+
+The interaction is OpenCode-inspired, but uses RecallLoop's existing bounded engine—not an
+OpenCode SDK integration or unrestricted execution agent. **Talk is the default**; Build is
+an explicit choice when you want reviewable code proposals.
 
 | Mode | What it does |
 | --- | --- |
-| Talk | Conversation using recalled context; no file-change proposals. |
-| Plan | Plans against selected files and memories; no file-change proposals. |
-| Build | Bounded file inspection/search and review-required file proposals. |
+| Talk | Everyday conversation and planning using recalled context; no file-change proposals. |
+| Plan | Multi-step plans using memories and relevant selected files; no file-change proposals. |
+| Build | Help with the requested task; coding requests can use bounded inspection and review-required proposals. |
 
 - Import text files/folders or a RecallLoop JSON project; edit and select context files.
+  Downloads and JSON backup/loading controls remain in **Files → Project backups**.
+- Assistant responses render Markdown headings, lists, emphasis, tables, blockquotes,
+  links, and fenced code, including partial fences. User prompts remain literal text.
+  Raw HTML is ignored, images are not fetched, and only explicit credential-free HTTP(S)
+  links are clickable. Formatted code is never executed; review/downloads remain separate.
 - Read-only tools: `list_files`, `read_file`, `search_files`, `recall_memory`, `sui_read`.
+- Workflow tools: `plan_task` shares up to six proposed steps; `ask_user` asks one clarification
+  with up to four optional replies. It pauses generation and blocks every other call queued
+  in that round, including writes or proposals queued before the question.
 - `remember` writes explicit facts/preferences when capture is enabled; `propose_file` is
   exposed only in Build. The UI's explicit teaching/outcome actions are separate writes
   even with automatic capture off.
-- Up to 3 tool rounds per turn. No shell, unrestricted filesystem access, package execution,
+- Up to 3 tool rounds / 4 calls per round. Initial travel recall uses at most two parallel
+  bounded lookups, including departure/preferences, within the normal context budget.
+  Empty or unavailable retrieval is not proof that a detail was never supplied.
+  No shell, unrestricted filesystem access, package execution,
   transaction signing, or automatic code application.
 - Up to 64 text files, 20,000 characters per file, and 160,000 selected context characters.
   Unsafe paths, common secret files, and binary imports are excluded.
-- Streaming supports Stop/Retry and a JSON fallback. A `pending` capture is **not** a saved
+- **Turn options** exposes streaming/capture controls. Ordinary streaming retries once as
+  non-streamed JSON only after an explicit unsupported-stream rejection—not key, approval,
+  quota, or model failures. Capability probes never retry. A `pending` capture is **not** a saved
   memory; refresh inventory rather than blindly retrying accepted remote jobs.
+- **Memory → Index & Mainnet evidence tools** contains bounded restore and explicitly
+  confirmed seeding. **Workspace settings → Advanced** contains the optional operator
+  access token, scripted-model switch, and separate embedding-configuration guidance.
+  Selecting only the scripted model leaves live memory connected and can still incur writes.
 
 ## Architecture and persistence
 
 ```text
 Browser: signed wallet gate + local project/transcript cache
     │ same-origin /api/agent, httpOnly cookie + session binding
-Express: isolated credentials → recall → model/tools → answer/proposals → capture
+Express: isolated credentials → recall → model + bounded workflow/tools → reply/question/proposals → capture
     ├── MemWal SDK → official Walrus Memory Mainnet relayer
     └── Tatum → read-only Sui Mainnet HTTP GraphQL
 Browser: review proposals → apply locally → test downloads → record user-reported outcome
@@ -175,7 +232,9 @@ Linux environments with an existing Chromium may use
 GitHub Actions is configured for Node 24.22.1/26.13.0 validation and a separate browser job.
 Both Node jobs also run the preserved, credential-free legacy retrieval checks.
 Browser tests use signed **synthetic** wallets and mocked credential responses, not live
-extension/provider authorization.
+extension/provider authorization. The one-worker harness paces tests before login to respect
+the unchanged 12-sign-ins/minute limit; it does not intercept authentication responses,
+extend production request deadlines, or retry provider verification.
 
 `npm run demo:agent` defaults to a network-free two-session loop **even when environment
 keys exist**. Live CLI execution is separate from browser sessions and opt-in:
@@ -208,10 +267,14 @@ multi-tenant service. Browser caches are not a security boundary against another
 using your browser. Never put unrelated secrets in selected files, chat, or memory.
 
 - [API contract](docs/API.md) — workspace, external memory, and legacy routes.
+- [Provider setup](docs/PROVIDER_SETUP.md) — independent connections, official links,
+  exact account models, capability verification, and separate embeddings.
 - [Authentication and deployment](docs/AUTHENTICATION.md) — wallet proofs, session binding,
   origin policy, and independent operator/API keys.
 - [Scope amendments](docs/SCOPE_AMENDMENTS.md) — requested coding/wallet scope and conflicts
-  with the preserved original [plan](docs/ACTION_PLAN.md) and [prompt](docs/IMPLEMENTATION_PROMPT.md).
+  with the committed original [plan](docs/ACTION_PLAN.md) and [prompt](docs/IMPLEMENTATION_PROMPT.md).
+  Newer local edits in those two documents were preserved untouched and excluded from the
+  continuation commits.
 - [Validation and live test checklist](docs/VALIDATION.md).
 - [Learning-loop blog draft](docs/BLOG_DRAFT.md) — not a published submission deliverable.
 - [Submission checklist](docs/SUBMISSION_CHECKLIST.md) — deadline and outstanding evidence.

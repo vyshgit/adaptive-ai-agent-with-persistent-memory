@@ -1,6 +1,6 @@
 # Validation and live evidence status
 
-Updated 8 November 2026. **Implementation/offline validation is green; live integration and
+Updated 9 November 2026. **Implementation/offline validation is green; live integration and
 the hackathon submission are not yet complete.** No real Mainnet blob evidence has been
 generated, and no success evidence file is checked in.
 
@@ -11,18 +11,24 @@ obtained on Linux with Node 26.13.0 and system Chromium.
 
 | Command | Observed result |
 | --- | --- |
-| `npm test` | **135 passed, 0 failed, 0 skipped**, including the pre-existing regression tests. |
+| `npm test` | **180 passed, 0 failed, 0 skipped**, including the pre-existing regression tests. |
 | `npm run typecheck` | Passed. |
-| `npm run build` | Passed; production React assets generated. |
-| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser` | **7 passed**. |
+| `npm run build` | Passed; production JavaScript **491.86 kB / 144.64 kB gzip**. |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser` | **31 passed** in 3.8 minutes; one worker, unchanged authentication policy/deadlines. |
 | `npm run demo:agent` | Passed, isolated mock; first-session fact recalled in a new session, scripted review-only code proposal; no network/provider/Mainnet calls. |
+| `npm run benchmark:retrieval` | Passed; four synthetic lexical cases, Recall@3 / MRR **1 / 1**. |
+| `npm run evaluate:retrieval` | Passed; synthetic evaluation Recall@3 / MRR **1 / 1**, hard-negative rate **0.375**, **0 cross-agent leaks**. Not a live semantic-quality benchmark. |
 | `npm audit` | **0 vulnerabilities** reported for the installed dependency lockfile. Not a complete application security audit. |
 
 CI repeats unit/type/build/demo/audit checks with Node 24.22.1 and 26.13.0 and runs Chromium
-scenarios separately. The initial hosted run passed both Node jobs but exposed the reload
-regression described below; follow-up hosted CI must pass before merging. Browser reports,
-screenshots, and traces are generated under gitignored `.playwright/`, not submitted as
-live evidence.
+scenarios separately. Historical follow-up [unit/build CI](https://github.com/vyshgit/adaptive-ai-agent-with-persistent-memory/actions/runs/42495197754)
+and [browser CI](https://github.com/vyshgit/adaptive-ai-agent-with-persistent-memory/actions/runs/42495202400)
+are completed/success for `728cb9995ecebb8cd46ac6538863a80c23593a48` on
+`feat/recallloop-coding-workspace`, merged through PR #2. Those results are **not redesign CI**.
+The current `feat/recallloop-dark-provider-redesign` work has local validation only; it has
+not been pushed and has no hosted run or PR. A new hosted run is still required before any
+future merge. Browser reports, screenshots, and traces are generated under gitignored
+`.playwright/`, not submitted as live evidence.
 
 ### What the tests establish
 
@@ -37,27 +43,50 @@ live evidence.
   tombstones, and refusal to count mock/unconfirmed evidence.
 - Responses/Chat Completions wire parsing with **mock HTTP fixtures**, streaming tools,
   bounded outputs, honest incomplete/error handling, no client impersonation, and redaction
-  across arbitrary stream chunks.
+  across arbitrary stream chunks. Stateless Responses rounds/follow-ups use `store: false`,
+  locally reconstructed text, and matching function `call_id` pairs without provider-stored
+  response/message/reasoning references. This is not a live routing diagnosis or a claim
+  that the previously reported Azure resource error is fixed.
+- Separate account-specific model discovery, bounded non-executing generation/stream/tool
+  verification, safe error categories, failed-replacement rollback, and failed-recheck status.
+- Memory-first travel recall with supplied, missing, uncertain, conflicting, corrected, or
+  unavailable departure context. Full timestamps preserve same-day correction context; short
+  follow-ups use previous user statements, not assistant guesses. These are deterministic
+  prompt/orchestration fixtures, not live-model reasoning or travel-quality evidence.
+- Proposed working plans, structured question-only JSON/SSE turns, real-reply continuation,
+  and blocking all other tools in a clarification round, including earlier queued writes.
+  Draft suggestions never submit themselves or become user facts before Send.
+  Long clarification history retains plan/question metadata within a 4,000-character entry,
+  preserving the preceding task and actual reply inside the server's 12,000-character budget
+  without truncating the displayed answer. Client/server and cached-browser regressions cover it.
 - Browser-only import/edit/export, reviewed proposals, exact patches (including `git apply
   --check` fixtures), pending-cache navigation flushing, Stop/Retry, mobile layout/themes,
-  and keyboard-accessible modals.
+  keyboard-accessible modals, safe Markdown, and reduced-motion-aware premium effects.
 - CLI defaults/confirmation guards, network-free two-session flow, wallet namespace mapping,
   and evidence exports that refuse invalid proof or existing files.
 
 ### Browser scenarios
 
-1. Signed synthetic-wallet onboarding and credential-form/cache/export redaction.
-2. Offline recall → code proposal → download/review → outcome → recall after clearing chat.
-3. Safe text import/export, cache reload, and editor keyboard behavior.
-4. Cross-tab wallet changes reject stale requests and restore the correct scoped project.
-5. Mobile panels/themes/settings at 390 px and 320 px without viewport overflow.
-6. Stop preserves a partial answer without capture; Retry avoids duplicate user submission.
-7. With autosave timers held pending, reload preserves the latest project and chat; hidden
-   visibility flushes subsequent edits. No sleep or increased assertion timeout masks the race.
+| Suite | Scenarios | Coverage |
+| --- | ---: | --- |
+| `browser/accessibility.pw.mjs` | 5 | Conversation-first panels and sessions preserve drafts/approval controls; arrow-key settings tabs, focus trap/Escape/restoration; stored themes; solid reading surfaces, dialog-backdrop blur and reduced motion; onboarding, composer and panels from short mobile to desktop. |
+| `browser/markdown.pw.mjs` | 2 | Lists/headings/tables, safe links, exact code and citation/review controls; no HTML execution, remote image fetching, unsafe links, or unreadable partial fences. |
+| `browser/providers.pw.mjs` | 9 | Official presets without guessed models/key sharing; discovery versus verification; failed replacements/rechecks and categorized errors; Cancel/Close races; stale wallet callbacks; independent verification/disconnection and failed operator-token refresh. |
+| `browser/wallet.pw.mjs` | 4 | Distinct connect/sign/verify progress; actionable wallet/signature declines; selected Mainnet account only; server logout before optional extension removal and visible disconnect errors. |
+| `browser/workflow.pw.mjs` | 4 | Recall departure before asking dates; question-only reload/continuation; draft-only suggestions and preserved drafts; keyboard/short-mobile reachability; long cached clarification continuation through the real local server; proposed plans and literal hostile metadata. |
+| `browser/workspace.pw.mjs` | 7 | Signed onboarding and cache/export redaction; offline recall → code proposal → exact download/review/application → outcome → fresh-session recall; safe import/edit/export and keyboard navigation; deterministic latest-cache flushing; cross-tab wallet isolation; mobile/theme/settings; Stop/Retry without duplicate users. |
+
+The cache regression holds autosave timers pending rather than sleeping until a save, and
+checks reload plus hidden-visibility flushing. Authentication is paced **before** each test,
+reserving three attempts against the real unchanged 12/minute limit; login requests and
+signatures are not intercepted, and the production request deadline is not increased.
 
 Synthetic browser wallets produce signatures that the real local server verifies.
-Credential-form responses are mocked: these checks **do not** establish real extension,
-Tatum, MemWal, or model-provider compatibility.
+Provider/connection and hostile-rendering responses use explicit fixtures; HTTP tests exercise
+the real local routes with injected upstream clients. These checks **do not** establish real
+extension, Tatum, MemWal, or model-provider compatibility. Screenshots of plans, clarifications,
+draft results, review/applied Files, provider dialogs, themes, and responsive surfaces were
+visually inspected in addition to automated checks.
 
 ### Reload regression follow-up
 
@@ -70,8 +99,31 @@ Project and chat caches now synchronously flush their latest snapshots on `pageh
 `visibilitychange`, and component cleanup, while retaining debounced saves during editing.
 Unit tests verify redaction, wallet-bound callbacks, and removal of disposed listeners. The
 original import/reload scenario also holds autosave pending instead of waiting out the race.
-All 135 local tests and seven Chromium scenarios pass with this fix. CI failure-artifact
-upload now includes the hidden `.playwright/` report directory.
+At that historical milestone, all 135 local tests and seven Chromium scenarios passed with
+the fix, followed by the successful hosted runs linked above. The expanded redesign suite
+reports 180 local tests and 31 Chromium scenarios, not a rerun of the historical seven only.
+CI failure-artifact upload includes the hidden `.playwright/` report directory.
+
+### Final continuation review
+
+The final source/diff review covered credential/session isolation, cache lifecycle, provider
+settings, workflow boundaries, and generated artifacts. Credential-pattern matches were only
+intentional synthetic unsafe URLs in Markdown tests; no unintended credentials or generated
+reports/build output were found in the reviewed change set. This review and the dependency
+audit are not a complete application security audit.
+
+The committed originals of `docs/ACTION_PLAN.md` and `docs/IMPLEMENTATION_PROMPT.md` were
+verified against their recorded SHA-256 baselines. Newer local edits in both files remain
+byte-for-byte untouched and excluded from continuation commits. See [scope amendments](SCOPE_AMENDMENTS.md).
+The continuation is split into workflow/client regressions, UI/provider/Markdown, browser
+tests, and documentation commits for review; it is not merged into `main` or pushed.
+
+An intermediate browser run passed 30/31 and failed only a strict-mode status assertion:
+progress and completion can briefly coexist while the connection dialog refreshes status.
+The test now targets the intended completion message; authentication limits and production
+deadlines were not changed. A focused repeat command completed twice before its shell
+timeout during conservative harness cooldown; no third result is claimed. The subsequent
+final full run completed successfully with **31/31 scenarios in 3.8 minutes**.
 
 ## Live manual validation
 
@@ -88,9 +140,11 @@ header. Share sanitized error codes and public account/blob IDs if help is neede
   then the account object and dedicated delegate. Confirm owner + signed delegate access;
   a public health response is insufficient. Keep the delegate **public** key for submission.
 - [ ] **Live model:** connect an authorized AgentRouter application/key or another supported
-  provider. Send a Talk turn, then a Build turn with compatible tool support. Discovery
-  alone is not generation proof. For AgentRouter `gpt-6.1-sol`, select Responses; request
-  provider approval rather than spoofing client fingerprints.
+  provider. Copy an exact model ID and supported protocol from the authenticated account;
+  do not rely on historical placeholders. Request RecallLoop approval if required rather
+  than spoofing a client fingerprint. Discovery alone is not generation proof. Run the
+  explicit bounded checks, then a real Talk clarification/continuation and a Build turn
+  with compatible tool support. Checks may consume quota and execute no returned tools.
 - [ ] **Confirmed writes:** teach a synthetic TypeScript/npm preference and a verified lesson.
   Inspect returned blob IDs, `stored` status, and independently refreshed inventory. If
   capture is pending/failed, inspect inventory before retrying accepted work.
@@ -133,7 +187,7 @@ never reused by the CLI. A checkpoint is a chain observation, not independent st
 | Verified Mainnet writes and portable recall | **Not attempted: credentials absent.** No blob IDs, live inventory, relayer/account proof, or checkpoint claimed. |
 | Published learning-loop blog | Draft only: [BLOG_DRAFT.md](BLOG_DRAFT.md). |
 | Working live demo + 2–3 minute video | Not yet recorded/validated live. Offline demo works. |
-| Public completed branch and hosted CI | Verify after commit/push; do not infer visibility from local Git state. |
+| Public completed branch and hosted CI | Historical workspace PR #2 merged with successful CI; redesign branch remains local and unpushed, with no redesign hosted CI or PR. |
 
 Do not promote a live checkbox to passed based on a test fixture, mock blob, public health
 response, successful model listing, or a proposed but untested code change. The

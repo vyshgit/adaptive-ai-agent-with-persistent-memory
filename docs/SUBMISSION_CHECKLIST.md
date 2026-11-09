@@ -7,11 +7,13 @@ Rules verified 8 November 2026 against the
 Also check the [Tatum event page](https://tatum.io/hackathon/total-recall) and
 [submission form](https://recall-tatum-walrus.vercel.app/) before submitting, since sponsors
 may update requirements. **The project is not submission-complete yet.**
+Local validation and release-review status updated **9 November 2026**.
 
 ## Required gates
 
-- [x] Coding/planning agent and visible recall/capture workflow implemented.
-- [x] Credential-free local startup, CLI demo, 135 tests, build/typecheck, and 7 browser
+- [x] Memory-first conversation/planning, bounded reviewed coding, and visible recall/capture
+  workflow implemented; working plans and draft-only clarification replies are distinct from actions.
+- [x] Credential-free local startup, CLI demo, 180 tests, build/typecheck, and 31 browser
   scenarios validated. Details: [VALIDATION.md](VALIDATION.md).
 - [ ] **Walrus Memory writing on Mainnet:** verify the user's authorized account/delegate,
   actual completed writes, and independent inventory. Health/config responses are not proof.
@@ -27,6 +29,8 @@ may update requirements. **The project is not submission-complete yet.**
   demo environment. Offline/mock fallback must be visibly labeled, not marketed as Mainnet.
 - [ ] **Public repository:** push the completed branch and verify access without login.
   If presenting a feature branch, link it explicitly rather than a default branch missing code.
+  The earlier workspace PR #2 is merged; the redesign branch is locally validated but unpushed
+  and has no hosted CI or PR. Historical green runs do not validate this redesign.
 - [ ] **2–3 minute demo video:** upload a viewable video, check access, and include its URL.
   This is mandatory on the form, even though the historical plan called video optional.
 - [ ] **Submit the form before the deadline** and retain the confirmation.
@@ -80,12 +84,15 @@ Official criteria: **30% Walrus/Tatum integration, 30% technical quality, 20% cr
 with citations and explicit code review—not a claim that all chat text is model training.
 Sharing on X/LinkedIn is a bonus; do not treat it as a replacement for required deliverables.
 
-## Final release check
+## Final local review and release checks
 
-- [ ] Review the committed diff for credentials, generated artifacts, and inaccurate claims.
-- [ ] Confirm the original plan/prompt are unchanged and scope changes are documented.
-- [ ] Run `npm test`, `npm run typecheck`, `npm run build`, `npm run test:browser`,
-  `npm run demo:agent`, and `npm audit` on the final release.
+- [x] Review the final continuation diff for credentials, generated artifacts, and inaccurate
+  claims; no unintended credentials or generated artifacts found in the reviewed changes.
+- [x] Verify the committed plan/prompt originals remain unchanged, preserve newer local edits
+  byte-for-byte and exclude them from continuation commits, and document scope amendments.
+- [x] Run `npm test`, `npm run typecheck`, `npm run build`, `npm run test:browser`,
+  `npm run demo:agent`, and `npm audit` on the final local redesigned source. Results:
+  [VALIDATION.md](VALIDATION.md). Repeat affected checks if code changes before release.
 - [ ] Verify hosted CI, public branch/default-branch contents, npm startup, and demo links.
 - [ ] Inspect real evidence and the published blog/video; replace no missing proof with a fixture.
 - [ ] Check final form/URLs while logged out and submit before **17:00 UTC on 10 November**.

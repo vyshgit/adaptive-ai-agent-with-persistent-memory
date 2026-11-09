@@ -1,4 +1,4 @@
-# Draft: a coding workspace that remembers the lesson, not just the chat
+# Draft: a memory-first workspace that keeps context, not just chat
 
 **Publication status: unpublished draft.** The implementation and offline tests described
 below are verified. Live provider/Mainnet behavior is not yet validated. Before publishing
@@ -8,16 +8,16 @@ Do not publish private credentials, real-user transcripts, or fabricated blob ID
 
 ## The problem
 
-A coding assistant can fix a function and still forget everything that made the fix useful:
-our package manager, the preference for small patches, or the regression test we wanted
-after last week's failure. Keeping an ever-growing chat transcript is not the same as
-keeping useful memory. It also ties the workflow to one browser and one conversation.
+An assistant can outline a trip and ask again where we depart from, or fix a function and
+forget our package manager and preference for small patches. Keeping an ever-growing chat
+transcript is not the same as keeping useful memory. It also ties the workflow to one
+browser and one conversation.
 
 RecallLoop is a browser-based Talk / Plan / Build workspace for **Smart Agents for Real
 Life**. It separates conversation history from portable preferences, facts, and corrections.
-The agent recalls those memories before answering and shows the citations that influenced
-the turn. Build proposes selected-file changes for review; it does not silently edit disk
-or run untrusted code.
+The agent recalls those memories before answering and shows supporting citations. Missing
+essentials get a clarification, not a guess. Build proposes selected-file changes for review;
+it does not silently edit disk or run untrusted code.
 
 ## The loop: recall → work → review → remember
 
@@ -38,6 +38,13 @@ after clearing local chat. These are offline results, not evidence of durable Ma
 storage or a real model's quality improvement. The live publication example must repeat
 the loop across a server restart or fresh browser with real confirmed citations.
 
+The same loop applies to everyday planning. The deterministic offline travel example first
+recalls a previously supplied departure city, then asks for missing dates. Home-only,
+uncertain, or conflicting location context requires confirmation. A recent explicit correction
+can supersede older context; failed retrieval is not proof that the user never supplied it.
+This is a scripted orchestration example, not live travel advice or a measured model-quality
+improvement. There are no live fares, weather, availability, or booking tools.
+
 ## Where Tatum and Walrus fit
 
 The browser sends selected project context only to the same-origin Express server. A signed,
@@ -57,6 +64,31 @@ RecallLoop requires signed delegate metadata access before installing a connecti
 public relayer health is not account authorization. Only confirmed blob IDs independently
 listed in the right namespace count toward the Mainnet seed gate. No live writes are
 claimed by this draft.
+
+## A workspace that keeps the conversation central
+
+The dark workspace keeps chat at the center, with collapsible local sessions and on-demand
+Files, Review, and Memory panels. Stored light preference and reduced-motion settings still
+work. Model, Tatum, and Walrus connection tabs have independent verification/disconnect
+controls; embeddings use the relayer rather than borrowing the chat model key.
+
+The workflow is OpenCode-inspired, but runs in RecallLoop's existing bounded engine. Talk is
+the default. A short working plan contains **proposed** steps, not a completed-action log or
+approval. An inline clarification pauses generation and blocks other calls in its round,
+including queued writes/proposals. Suggested replies only fill an editable draft; nothing is
+submitted until Send. Actual tool activity is shown separately from the plan.
+Clarification history preserves the question and plan within the existing context budget,
+so even a long displayed reply does not displace the task needed for continuation.
+
+Small entry/panel transitions, subtle button feedback, and dialog-backdrop blur provide depth
+without gradients, glowing surfaces, or continuous decoration. Reading/editing surfaces stay
+solid; reduced-motion preferences disable the motion rather than only shortening it.
+
+Assistant answers render headings, lists, tables, links, and fenced code instead of raw
+Markdown markers. Formatting does not add trust: raw HTML is ignored, remote images are
+not fetched, unsafe/credential-bearing links are not clickable, and code remains text until
+the user reviews a proposal. Review, exact downloads, citations, and outcome controls remain
+separate from the formatted answer.
 
 Memory has three tiers:
 
@@ -83,7 +115,8 @@ retrying rather than duplicating an already accepted write.
 
 ## Honesty and safety are part of the feature
 
-The implementation passes **135 unit/HTTP/CLI tests and 7 Chromium scenarios** locally.
+As of **9 November 2026**, the implementation passes **180 unit/HTTP/CLI tests** and
+**31 Chromium scenarios** locally, along with typecheck and the production build.
 Those include real local signature verification, replay/logout races, cross-wallet and
 stale-tab isolation, request/write bounds, and redaction across split stream chunks.
 Provider/account HTTP responses in automated tests are fixtures, not live compatibility.
@@ -101,6 +134,13 @@ best-effort, so private secrets do not belong in code context or a recorded demo
 The provider adapter supports Responses and Chat Completions. AgentRouter may reject
 unapproved clients even with a valid key. RecallLoop does not impersonate another client:
 request app approval, use an authorized alternative, or explicitly show the mock model.
+Model discovery is not generation verification: an explicit small coding request establishes
+only the selected model/protocol at the displayed time. Streaming and function support
+have separate optional, non-executing checks. These tests cost provider quota, use no
+private workspace context, and are not evidence of live account access when run as fixtures.
+Responses rounds reconstruct local text with `store: false` and matching function call/output
+IDs, without reusing provider-stored response, message, or reasoning state. A mocked HTTP
+regression checks tool rounds and follow-ups; it is not a live-provider routing diagnosis.
 
 ## Finish the live story before publication
 

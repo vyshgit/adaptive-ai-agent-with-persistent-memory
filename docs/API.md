@@ -116,7 +116,7 @@ succeeded. Restore is capped at 20 per namespace and does not promise full recov
   "sessionId": "session-1",
   "message": "Fix greet for empty names using my preferences.",
   "history": [],
-  "model": "gpt-6.1-sol",
+  "model": "EXACT_MODEL_ID_FROM_YOUR_ACCOUNT",
   "mode": "build",
   "stream": true,
   "capture": true,
@@ -131,17 +131,24 @@ succeeded. Restore is capped at 20 per namespace and does not promise full recov
 
 - Required `sessionId`: up to 128 characters, `[A-Za-z0-9._:-]`. Required `message`: up to
   4,000 characters. Model must be in the connected list and defaults to its selected model.
-- `mode`: `talk`, `plan`, or `build` (default). `stream` and `capture`: booleans, default
+- `mode`: `talk` (default), `plan`, or `build`. `stream` and `capture`: booleans, default
   true. Optional `occurredAt` must be UTC ending in `Z`; preserve it on raw-write retries.
 - `history`: user/assistant only, up to 200 submitted entries / 20,000 characters per entry.
   Keep at most 20 previous entries; previous content plus the new message is capped at
   12,000 characters before generation.
-  Client-supplied system/tool history is refused.
+  Client-supplied system/tool history is refused. The browser caps an assistant clarification
+  entry at 4,000 characters, reserving space for its plan/question before trimming prose.
+  This leaves room for the preceding 4,000-character user task and a maximum-length reply
+  inside the server budget; it does not truncate the displayed answer.
 - Optional `project`: at most 64 safe relative text files, 20,000 characters each / 160,000
   total. Only selected files are sent by the UI. No server filesystem path, persistent
   upload, shell execution, or automatic project export occurs.
 - Capture off disables automatic turn capture and the model's `remember` tool; explicit
   UI teaching/outcome routes are independent writes.
+- Memory is recalled before generation. Initial travel requests use at most two parallel
+  bounded lookups, including departure/personal context, merged into the normal eight-hit /
+  800-token budget. Short replies include preceding user context, not assistant guesses.
+  Missing or unavailable retrieval does not establish that a detail was never supplied.
 
 ### SSE protocol
 
@@ -151,11 +158,13 @@ across arbitrary byte boundaries; `EventSource` cannot submit this POST body.
 
 | Event | Data / meaning |
 | --- | --- |
-| `memory` | `{ context, memories, strategy, tokenEstimate, memoryUnavailable }`; before generation, possibly refreshed after a recall tool. |
+| `memory` | `{ context, memories, strategy, tokenEstimate, lookups, memoryUnavailable }`; before generation, possibly refreshed after a recall tool. `lookups` counts initial lookups (1–2), not all tool calls. |
 | `delta` | `{ text }`; redacted answer fragments. |
-| `tool` | `{ id, name, args?, status, preview? }`; actual call ID, `running`, then `done`/`error`. |
+| `tool` | `{ id, name, args?, status, preview? }`; actual call ID, `running`, then `done`/`error`, or `blocked` for a call not run because its round asks for a reply. |
+| `plan` | `{ id, summary, steps }`; a user-visible working plan of proposed steps, not execution or approval. Replaces the turn's previous plan. |
+| `question` | `{ id, question, why?, options }`; one clarification awaiting a real user reply. No option is selected by default. |
 | `proposal` | `{ id, path, before, after, baseHash, reason, status: "pending" }`; nothing applied. |
-| `done` | `{ model, finishReason }`; answer finished, **not** memory confirmation. |
+| `done` | `{ model, finishReason }`; generation finished, **not** memory confirmation. `finishReason: "question"` is a paused clarification, not a completed task. |
 | `stored` | `{ verbatim, facts, failed, blobs, chainAnchor?, pending?, skipped?, message? }`; capture result after `done`. |
 | `error` | `{ code, message, retryable }`; terminal generation/protocol failure; no later `done`. |
 
@@ -166,20 +175,55 @@ blob IDs count. Inspect inventory before retrying accepted work.
 
 Stop/disconnect aborts generation. An accepted capture can finish after disconnect; logout
 destroys local services but cannot undo an accepted remote job. Output is capped at 40,000
-characters. Provider 401/403 errors are not retried; explicit unsupported streaming may
-trigger one non-streamed provider request. Incomplete Responses output is reported as
+characters. Key, approval, quota, and model failures are not retried; explicit unsupported
+streaming may trigger one non-streamed provider request. Capability probes never retry.
+Incomplete Responses output is reported as
 `finishReason: "length"`, not silently treated as complete.
 
-`stream: false` returns `{ answer, memories, memory, tools, proposals, stored, model,
-finishReason }` as JSON; generation failure is a non-2xx JSON error. Logout during an
+`stream: false` returns `{ answer, memories, memory, tools, proposals, plan?, question?,
+stored, model, finishReason }` as JSON; generation failure is a non-2xx JSON error. A valid
+question-only turn may have `answer: ""`. Logout during an
 active JSON turn ends it with `401 wallet_required`.
+
+After a clarification, submit a new chat request with the actual user reply and previous
+user/assistant history. Include the clarification text in assistant history even when there
+was no prose answer. The browser does this automatically. Suggested UI replies change only
+the composer draft; they are not submitted, captured, or treated as user facts until Send.
+
+Responses provider requests use `store: false` and rebuild input from local transcript text.
+They never send `previous_response_id`, a provider conversation reference, stored message/
+reasoning item IDs, or encrypted reasoning state. Within a tool round, locally reconstructed
+function calls and outputs retain their matching `call_id`; this is required tool linkage,
+not provider-stored conversation state. Follow-up turns use user/assistant text history.
+
+### Client response formatting
+
+The chat transport still returns plain answer text/deltas. The browser renders **assistant**
+Markdown with `react-markdown` and `remark-gfm`: headings, lists, emphasis, tables,
+blockquotes, links, and fenced code, including incomplete streaming fences. User messages
+remain literal text. No raw HTML is injected, model images are not fetched, and only
+explicit credential-free HTTP(S) links open in a new tab with `noopener noreferrer`.
+Relative API/file URLs, executable/data schemes, and URL credentials are not clickable.
+Code is text, not execution; proposal contents and exact patch/download behavior are unchanged.
 
 ### Bounded tools and concurrency
 
-Tools: `list_files`, `read_file`, `search_files`, `propose_file`, `recall_memory`, `remember`,
-`sui_read`. Only Build exposes `propose_file`: full text replacements, never applied or
+Tools: `plan_task`, `ask_user`, `list_files`, `read_file`, `search_files`, `propose_file`,
+`recall_memory`, `remember`, `sui_read`. Only Build exposes `propose_file`: full text replacements, never applied or
 run server-side. `sui_read` allows checkpoint/object reads through fixed Tatum GraphQL
 queries, not arbitrary queries or transactions.
+
+`plan_task` accepts a summary up to 240 characters and 1–6 steps up to 240 characters each.
+It grants no execution or approval. `ask_user` accepts one question up to 400 characters,
+optional `why` up to 600, and 0–4 distinct reply suggestions up to 160 characters each.
+Workflow metadata is validated/redacted and rendered as literal text, not executable HTML.
+A successful question stops further generation. Every other call in that round is blocked,
+including earlier queued writes/proposals; call `ask_user` alone. Capture, if enabled, can
+still record the actual user statement and assistant clarification, never a suggested reply
+as though the user had selected it. With tools disabled, the model can ask or plan in text.
+
+This is a bounded, browser-project engine, not an OpenCode SDK integration. It adds no shell,
+web search, travel service, booking, publication, messaging, or transaction execution.
 
 Limits: 3 tool rounds, 4 calls per round, 6 proposals / 64,000 proposed characters, and
 40,000 cumulative tool-result characters. Each tool has a 15-second turn deadline;
