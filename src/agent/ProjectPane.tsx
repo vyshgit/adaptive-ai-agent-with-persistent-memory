@@ -32,39 +32,42 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
     } catch (error) { setError(error instanceof Error ? error.message : 'Files could not be imported.') }
     finally { setImporting(false); if (fileInput.current) fileInput.current.value = ''; if (folderInput.current) folderInput.current.value = '' }
   }
-  return <div className="flex h-full min-h-0 flex-col">
-    <header className="shrink-0 border-b border-secondary p-lg">
-      <div className="flex items-center justify-between gap-sm"><h2 className="truncate text-sm font-semibold" title={project.name}>{project.name}</h2><IconButton label="Add a browser file" disabled={busy} onClick={() => setNewPath('')}><Plus size={16} /></IconButton></div>
-      <div className="mt-md flex flex-wrap items-center gap-sm">
-        <Button disabled={busy || importing} onClick={() => folderInput.current?.click()}><FolderOpen size={14} className="shrink-0" />Import folder</Button>
-        <IconButton label="Import text files" disabled={busy || importing} onClick={() => fileInput.current?.click()}><Upload size={16} /></IconButton>
+  return <div className="workspace-scroll flex h-full min-h-0 flex-col overflow-y-auto bg-primary">
+    <header className="shrink-0 border-b border-secondary p-xl">
+      <div className="flex items-center justify-between gap-md"><div className="min-w-0"><h2 className="truncate text-sm font-medium" title={project.name}>{project.name}</h2><p className="mt-xs text-xs text-tertiary">Browser project</p></div><div className="flex shrink-0 items-center">
+        <IconButton label="Add a browser file" disabled={busy || importing} onClick={() => setNewPath('')}><Plus size={16} className="shrink-0" aria-hidden="true" /></IconButton>
         <IconButton label="Export browser project as JSON" disabled={busy} onClick={() => {
           try { downloadText('recallloop-project.json', JSON.stringify(normaliseProject(project), null, 2), 'application/json') }
           catch (error) { setError(error instanceof Error ? error.message : 'Project export failed.') }
-        }}><Download size={16} /></IconButton>
-        <IconButton label="Load a RecallLoop JSON project" disabled={busy || importing} onClick={() => backupInput.current?.click()}><FileCode2 size={16} /></IconButton>
+        }}><Download size={16} className="shrink-0" aria-hidden="true" /></IconButton>
+      </div></div>
+      <div className="mt-lg flex flex-wrap items-center gap-sm">
+        <Button size="sm" disabled={busy || importing} onClick={() => folderInput.current?.click()}><FolderOpen size={14} className="shrink-0" aria-hidden="true" />Import folder</Button>
+        <Button size="sm" aria-label="Import text files" disabled={busy || importing} onClick={() => fileInput.current?.click()}><Upload size={14} className="shrink-0" aria-hidden="true" />Import files</Button>
       </div>
+      <details className="mt-lg text-xs text-tertiary"><summary className="cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Project backups</summary><div className="mt-lg space-y-md"><Button size="sm" disabled={busy || importing} onClick={() => backupInput.current?.click()}><FileCode2 size={14} className="shrink-0" aria-hidden="true" />Load a RecallLoop JSON project</Button><p>Export with the download button above. Loading a backup asks before replacing your browser project.</p></div></details>
       <input ref={fileInput} type="file" multiple className="hidden" onChange={event => { void importFiles(event.target.files) }} />
       <input ref={folderInput} type="file" multiple {...{ webkitdirectory: '' }} className="hidden" onChange={event => { void importFiles(event.target.files) }} />
       <input ref={backupInput} type="file" accept="application/json,.json" className="hidden" onChange={async event => {
         const candidate = event.target.files?.[0]
         if (!candidate) return
+        setImporting(true); setError('')
         try {
           if (candidate.size > 3_000_000) throw new Error('Project backup is too large.')
           setImported({ project: normaliseProject(JSON.parse(await candidate.text())), skipped: [] })
         } catch (error) { setError(error instanceof Error ? error.message : 'Invalid project backup.') }
-        finally { if (backupInput.current) backupInput.current.value = '' }
+        finally { setImporting(false); if (backupInput.current) backupInput.current.value = '' }
       }} />
-      <p className="mt-md text-xs text-tertiary">Import is browser-only. Check files to share them with the model. Secret files and dependencies are excluded.</p>
+      <p className="mt-lg text-xs leading-relaxed text-tertiary">Check files to include them in a turn. Imports never grant disk access; known secret files and dependencies are excluded.</p>
       {importing && <p role="status" className="mt-sm text-xs text-secondary">Reading selected text files…</p>}
       {error && <p role="alert" className="mt-sm text-xs text-error-primary">{error}</p>}
     </header>
-    <div className="max-h-48 shrink-0 overflow-y-auto border-b border-secondary p-sm" aria-label="Browser project files">
+    <div className="workspace-scroll max-h-40 shrink-0 overflow-y-auto border-b border-secondary p-lg" aria-label="Browser project files">
       {!project.files.length && <p className="p-md text-sm text-tertiary">Import a folder or add a file to start coding.</p>}
-      {project.files.map(item => <div key={item.path} className={`flex items-center gap-sm rounded-md px-md ${item.path === project.activeFile ? 'bg-secondary' : 'hover:bg-primary-hover'}`}>
+      {project.files.map(item => <div key={item.path} className={`workspace-control flex items-center gap-md rounded-md border px-md ${item.path === project.activeFile ? 'border-secondary bg-secondary' : 'border-transparent hover:bg-primary-hover'}`}>
         <Checkbox checked={item.selected} disabled={busy} onChange={selected => updateFile(item.path, file => ({ ...file, selected }))}><span className="sr-only">Share {item.path} with model</span></Checkbox>
-        <button disabled={busy} className="flex min-w-0 flex-1 items-center gap-sm rounded-md py-sm text-left font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-50"
-          title={item.path} onClick={() => onChange({ ...project, activeFile: item.path })}><FileCode2 size={13} className="shrink-0 text-fg-tertiary" /><span className="truncate">{item.path}</span></button>
+        <button type="button" disabled={busy} aria-current={item.path === project.activeFile ? 'true' : undefined} className="flex min-w-0 flex-1 items-center gap-md rounded-md py-lg text-left font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+          title={item.path} onClick={() => onChange({ ...project, activeFile: item.path })}><FileCode2 size={13} className="shrink-0 text-fg-tertiary" aria-hidden="true" /><span className="truncate">{item.path}</span></button>
       </div>)}
     </div>
     {newPath !== null && <form className="shrink-0 border-b border-secondary p-lg" onSubmit={event => {
@@ -76,16 +79,16 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
     }}>
       <label htmlFor="new-file-path" className="mb-sm block text-xs text-secondary">New relative file path</label>
       <input id="new-file-path" autoFocus className={fieldClass} value={newPath} maxLength={240} placeholder="src/example.ts" onChange={event => setNewPath(event.target.value)} />
-      <div className="mt-sm flex gap-sm"><Button type="submit" disabled={!newPath.trim()}>Add file</Button><Button onClick={() => setNewPath(null)}>Cancel</Button></div>
+       <div className="mt-sm flex gap-sm"><Button type="submit" disabled={busy || importing || !newPath.trim()}>Add file</Button><Button onClick={() => setNewPath(null)}>Cancel</Button></div>
     </form>}
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-sm px-lg py-sm">
+    <div className="flex min-h-48 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-md border-b border-secondary bg-secondary px-xl py-sm">
         <label htmlFor="project-editor" className="min-w-0 truncate font-mono text-xs text-secondary">{file?.path || 'No file selected'}</label>
-        {file && <IconButton label="Download current file" onClick={() => downloadText(file.path.split('/').at(-1)!, file.content)}><Download size={14} /></IconButton>}
+        {file && <IconButton label="Download current file" onClick={() => downloadText(file.path.split('/').at(-1)!, file.content)}><Download size={14} className="shrink-0" aria-hidden="true" /></IconButton>}
       </div>
       <textarea ref={editor} id="project-editor" aria-label={file ? `Edit ${file.path}` : 'Project editor'} aria-describedby="editor-hint" spellCheck={false} autoCapitalize="off" autoComplete="off" wrap="off"
         disabled={!file || busy} maxLength={MAX_FILE_CHARS} value={file?.content || ''} onChange={event => { if (file) updateFile(file.path, item => ({ ...item, content: event.target.value })) }}
-        className="min-h-48 w-full flex-1 resize-none border border-transparent bg-secondary p-lg font-mono text-xs leading-relaxed text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-50"
+        className="workspace-scroll min-h-32 w-full flex-1 resize-none border border-transparent bg-primary p-xl font-mono text-xs leading-relaxed text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
         onKeyDown={event => {
           if (event.key === 'Escape') tabIndent.current = false
           if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.metaKey && file) {
@@ -98,7 +101,7 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); onNotice('Edits are cached in this browser. Download a file, project JSON, or reviewed patch to save work on disk.') }
         }} />
     </div>
-    <footer className="shrink-0 border-t border-secondary p-lg">
+    <footer className="shrink-0 border-t border-secondary bg-secondary p-xl">
       <p className={`text-xs ${characters > MAX_CONTEXT_CHARS ? 'text-error-primary' : 'text-tertiary'}`}>{selected}/{project.files.length} files shared · {characters.toLocaleString()}/{MAX_CONTEXT_CHARS.toLocaleString()} context characters</p>
       <p id="editor-hint" className="mt-sm text-xs text-tertiary">Browser edits only · {file?.content.split('\n').length || 0} lines. Tab indents; Escape then Tab moves focus. Export to write changes locally.</p>
     </footer>

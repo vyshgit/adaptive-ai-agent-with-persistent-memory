@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { getWallets } from '@wallet-standard/app'
 import { isWalletWithRequiredFeatureSet } from '@mysten/wallet-standard'
-import type { WalletWithFeatures, StandardConnectFeature, StandardEventsFeature, SuiSignPersonalMessageFeature, WalletAccount } from '@mysten/wallet-standard'
-import { Brain, Wallet, ShieldCheck, Sun, Moon, KeyRound } from 'lucide-react'
+import type { WalletWithFeatures, StandardConnectFeature, StandardDisconnectFeature, StandardEventsFeature, SuiSignPersonalMessageFeature, WalletAccount } from '@mysten/wallet-standard'
+import { Layers2, Wallet, ShieldCheck, Sun, Moon, KeyRound, Database, ExternalLink, LoaderCircle } from 'lucide-react'
 import { agentJson, resetSessionSecrets, setSessionTag, setWorkspaceToken } from './api.ts'
 import { redactBrowserText } from './clientSafety.ts'
 import type { WalletSession } from './types.ts'
-import { Button, IconButton, Badge, fieldClass } from './ui.tsx'
+import { Button, IconButton, fieldClass } from './ui.tsx'
 import AgentApp from './AgentApp.tsx'
 
-type SigningWallet = WalletWithFeatures<StandardConnectFeature & StandardEventsFeature & SuiSignPersonalMessageFeature>
+type SigningWallet = WalletWithFeatures<StandardConnectFeature & StandardEventsFeature & SuiSignPersonalMessageFeature & Partial<StandardDisconnectFeature>>
 function availableWallets(): SigningWallet[] {
   return getWallets().get().filter((wallet): wallet is SigningWallet =>
     wallet.chains.some(chain => chain.startsWith('sui:')) && isWalletWithRequiredFeatureSet<SuiSignPersonalMessageFeature>(wallet, ['sui:signPersonalMessage']))
 }
 function sameAddress(a: string, b: string) { return a.toLowerCase().replace(/^0x0*/, '0x') === b.toLowerCase().replace(/^0x0*/, '0x') }
+async function disconnectExtension(wallet?: SigningWallet) {
+  try { await wallet?.features['standard:disconnect']?.disconnect() }
+  catch { /* Optional extension permission removal cannot undo server logout. */ }
+}
 
 export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: () => void }) {
   const [auth, setAuth] = useState<WalletSession>()
@@ -42,14 +46,20 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
     finally { if (id === generation.current) setPending('') }
   }
   async function logout() {
+    if (mutation.current) return
     const id = ++generation.current
     mutation.current = true
     setPending('Ending wallet session…'); setError('')
     try {
       const result = await agentJson<WalletSession>('/auth/logout', { method: 'POST', body: '{}' })
-      if (id === generation.current) { accept(result); setConnected(undefined); setAccounts([]); setAccountAddress('') }
-    } catch (error) { setError(error instanceof Error ? error.message : 'Logout failed. Reconnect to the server and retry.'); throw error }
-    finally { mutation.current = false; setPending('') }
+      if (id === generation.current) {
+        accept(result); setConnected(undefined); setAccounts([]); setAccountAddress('')
+        // The server session has already ended. Extension disconnect is optional
+        // and cannot restore that session if the extension declines it.
+        void disconnectExtension(connected)
+      }
+    } catch (error) { if (id === generation.current) setError(redactBrowserText(error instanceof Error ? error.message : 'Logout failed. Reconnect to the server and retry.')); throw error }
+    finally { if (id === generation.current) { mutation.current = false; setPending('') } }
   }
   useEffect(() => {
     const registry = getWallets()
@@ -73,14 +83,19 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
   }, [auth?.expiresAt])
   useEffect(() => {
     if (!connected || !auth?.authenticated || !accounts.some(account => auth.address && sameAddress(account.address, auth.address))) return
-    return connected.features['standard:events'].on('change', event => {
+    let active = true
+    const sessionTag = auth.sessionTag
+    const remove = connected.features['standard:events'].on('change', event => {
+      if (!active || current.current?.sessionTag !== sessionTag) return
       if (event.accounts && !event.accounts.some(account => current.current?.address && sameAddress(account.address, current.current.address))) {
         void logout().catch(() => {})
       }
     })
+    return () => { active = false; remove() }
   }, [connected, auth?.sessionTag])
 
   async function connectWallet() {
+    if (mutation.current) return
     const wallet = wallets[walletIndex]
     if (!wallet) return
     const id = ++generation.current
@@ -93,8 +108,8 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
       if (!suiAccounts.length) throw new Error('Select a Sui Mainnet account with personal-message signing in your wallet.')
       setConnected(wallet); setAccounts(suiAccounts); setAccountAddress(suiAccounts[0].address)
       if (suiAccounts.length === 1) await signIn(wallet, suiAccounts[0])
-    } catch (error) { setError(redactBrowserText(error instanceof Error ? error.message : 'Wallet connection was declined.')) }
-    finally { mutation.current = false; setPending('') }
+    } catch (error) { if (id === generation.current) setError(redactBrowserText(error instanceof Error ? error.message : 'Wallet connection was declined.')) }
+    finally { if (id === generation.current) { mutation.current = false; setPending('') } }
   }
   async function signIn(wallet: SigningWallet, account: WalletAccount) {
     const id = ++generation.current
@@ -102,6 +117,7 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
     setPending('Requesting sign-in challenge…'); setError('')
     try {
       const challenge = await agentJson<{ challengeId: string; message: string; address: string }>('/auth/challenge', { method: 'POST', body: JSON.stringify({ address: account.address }) })
+      if (id !== generation.current) return
       if (!challenge.message.includes(`Origin: ${window.location.origin}\n`) || !sameAddress(challenge.address, account.address)) throw new Error('The sign-in challenge did not match this app and wallet.')
       setPending('Sign the personal message in your wallet…')
       const signed = await wallet.features['sui:signPersonalMessage'].signPersonalMessage({ message: new TextEncoder().encode(challenge.message), account, chain: 'sui:mainnet' })
@@ -109,46 +125,58 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
       setPending('Verifying wallet ownership…')
       const result = await agentJson<WalletSession>('/auth/verify', { method: 'POST', body: JSON.stringify({ address: account.address, challengeId: challenge.challengeId, signature: signed.signature }) })
       if (id === generation.current) accept(result)
-    } catch (error) { setError(redactBrowserText(error instanceof Error ? error.message : 'Wallet sign-in was declined or failed.')) }
-    finally { mutation.current = false; setPending('') }
+    } catch (error) { if (id === generation.current) setError(redactBrowserText(error instanceof Error ? error.message : 'Wallet sign-in was declined or failed.')) }
+    finally { if (id === generation.current) { mutation.current = false; setPending('') } }
+  }
+  function disconnectSelection() {
+    const wallet = connected
+    setConnected(undefined); setAccounts([]); setAccountAddress(''); setError('')
+    void disconnectExtension(wallet)
   }
   if (auth?.sessionTag && (auth.authenticated || auth.demo)) return <AgentApp key={auth.sessionTag} identity={auth} dark={dark} onTheme={onTheme} onLogout={logout} />
 
   return <div className="flex min-h-dvh flex-col bg-primary text-primary">
-    <header className="flex items-center justify-between gap-lg border-b border-secondary px-xl py-lg">
-      <h1 className="flex items-center gap-md text-lg font-semibold"><Brain size={23} className="shrink-0 text-fg-brand-primary" />RecallLoop</h1>
-      <IconButton label={dark ? 'Switch to light theme' : 'Switch to dark theme'} onClick={onTheme}>{dark ? <Sun size={18} /> : <Moon size={18} />}</IconButton>
+    <header className="flex shrink-0 items-center justify-between gap-lg border-b border-secondary px-xl py-lg sm:px-3xl">
+      <h1 className="flex items-center gap-md text-lg font-semibold"><Layers2 size={23} className="shrink-0 text-fg-secondary" aria-hidden="true" />RecallLoop</h1>
+      <div className="flex items-center gap-lg"><span className="hidden text-xs text-tertiary sm:inline">Sui Mainnet</span><IconButton label={dark ? 'Switch to light theme' : 'Switch to dark theme'} onClick={onTheme}>{dark ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}</IconButton></div>
     </header>
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-xl p-xl md:p-4xl">
-      <div><Badge tone="brand">Talk · Plan · Build</Badge><h2 className="mt-lg text-heading-sm font-semibold">Your workspace. Your wallet. Portable memory.</h2>
-        <p className="mt-md text-sm text-secondary">Sign in with your Sui wallet, connect your own APIs, and work with an agent that recalls your preferences, corrections, and lessons in later sessions.</p></div>
-      <section className="rounded-xl border border-secondary bg-primary p-xl shadow-xs" aria-label="Wallet sign-in">
-        <h3 className="mb-md flex items-center gap-sm text-lg font-semibold"><Wallet size={20} className="shrink-0 text-fg-tertiary" />Sign in with Sui</h3>
-        <p className="mb-lg text-xs text-tertiary">Connecting an address is not a login. RecallLoop verifies an expiring, single-use personal-message signature. No funds are spent and no transaction is requested.</p>
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center gap-4xl px-xl py-4xl sm:p-4xl lg:flex-row lg:items-center lg:gap-6xl">
+      <div className="workspace-enter min-w-0 flex-1">
+        <p className="mb-lg text-sm font-medium text-utility-brand-700">Your workspace, with memory</p>
+        <h2 className="text-heading-sm font-semibold sm:text-heading-md">Keep the context.<br />Move things forward.</h2>
+        <p className="mt-xl max-w-lg text-md leading-relaxed text-secondary">Talk through an idea, plan a trip, or review a code change. Bring your own model and carry preferences and lessons into the next session with Walrus Memory.</p>
+        <ol className="mt-3xl divide-y divide-secondary text-sm text-secondary">
+          <li className="flex items-start gap-lg py-lg"><Wallet size={18} className="mt-xxs shrink-0 text-fg-tertiary" aria-hidden="true" /><div className="min-w-0"><span className="font-medium">Connect your wallet</span><p className="mt-xs text-xs text-tertiary">Sign a login message. No transaction or spending permission.</p></div></li>
+          <li className="flex items-start gap-lg py-lg"><KeyRound size={18} className="mt-xxs shrink-0 text-fg-tertiary" aria-hidden="true" /><div className="min-w-0"><span className="font-medium">Choose your model</span><p className="mt-xs text-xs text-tertiary">Connect AgentRouter or another supported API in your isolated session.</p></div></li>
+          <li className="flex items-start gap-lg py-lg"><Database size={18} className="mt-xxs shrink-0 text-fg-tertiary" aria-hidden="true" /><div className="min-w-0"><span className="font-medium">Add portable memory when you need it</span><p className="mt-xs text-xs text-tertiary">Tatum verifies your Walrus account owner; a dedicated delegate authorizes memory access.</p></div></li>
+        </ol>
+      </div>
+      <section className="workspace-enter w-full min-w-0 rounded-xl border border-primary bg-secondary p-2xl shadow-xs lg:max-w-sm" aria-label="Wallet sign-in">
+        <div className="mb-xl flex items-center gap-lg"><span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-secondary bg-primary"><Wallet size={20} className="shrink-0 text-fg-secondary" aria-hidden="true" /></span><div><h3 className="text-lg font-semibold">Open your workspace</h3><p className="mt-xxs text-xs text-tertiary">Sui Mainnet · one-hour session</p></div></div>
+        <p className="mb-xl text-sm text-secondary">Connect, then sign a single-use personal message to verify ownership. This is authentication, not a transaction.</p>
         {wallets.length ? <div className="flex flex-col gap-lg">
-          <div><label className="mb-sm block text-sm text-secondary" htmlFor="sign-in-wallet">Wallet</label><select id="sign-in-wallet" className={fieldClass} value={walletIndex} disabled={Boolean(pending)} onChange={event => { setWalletIndex(Number(event.target.value)); setConnected(undefined); setAccounts([]) }}>{wallets.map((wallet, index) => <option key={`${wallet.name}-${index}`} value={index}>{wallet.name}</option>)}</select></div>
+          {wallets.length > 1 ? <div><label className="mb-sm block text-sm text-secondary" htmlFor="sign-in-wallet">Wallet</label><select id="sign-in-wallet" className={fieldClass} value={walletIndex} disabled={Boolean(pending)} onChange={event => { disconnectSelection(); setWalletIndex(Number(event.target.value)) }}>{wallets.map((wallet, index) => <option key={`${wallet.name}-${index}`} value={index}>{wallet.name}</option>)}</select></div>
+            : <p className="truncate text-xs text-tertiary" title={wallets[0].name}>{wallets[0].name}</p>}
           {accounts.length > 1 && <div><label className="mb-sm block text-sm text-secondary" htmlFor="sign-in-account">Sui account</label><select id="sign-in-account" className={fieldClass} value={accountAddress} disabled={Boolean(pending)} onChange={event => setAccountAddress(event.target.value)}>{accounts.map(account => <option key={account.address} value={account.address}>{account.label || account.address}</option>)}</select></div>}
-          <Button primary disabled={Boolean(pending)} onClick={() => { const account = accounts.find(account => account.address === accountAddress); if (connected && account) void signIn(connected, account); else void connectWallet() }}>{pending || (connected ? 'Sign in with this account' : 'Connect & sign in')}</Button>
-        </div> : <p className="text-sm text-secondary">No compatible wallet found. Install or unlock a Sui Wallet Standard wallet (such as Slush), enable Mainnet, then return to this page. zkLogin and multisig login are not supported in this release.</p>}
-        {pending && <p role="status" className="mt-md text-xs text-secondary">{pending}</p>}
-        {error && <p role="alert" className="mt-md text-sm text-error-primary">{error}</p>}
-        <div className="mt-lg flex flex-wrap gap-sm"><Button disabled={Boolean(pending)} onClick={() => { setPending('Checking wallet session…'); void refresh() }}>Retry session check</Button>
+          {connected && accountAddress && <div className="border-y border-secondary py-lg text-xs"><p className="mb-xs text-tertiary">Selected address · Sui Mainnet</p><code className="break-all text-secondary">{accountAddress}</code></div>}
+          <Button primary className="w-full" disabled={Boolean(pending)} onClick={() => { const account = accounts.find(account => account.address === accountAddress); if (connected && account) void signIn(connected, account); else void connectWallet() }}><Wallet size={16} className="shrink-0" aria-hidden="true" />{connected ? 'Sign in with this account' : 'Connect Wallet'}</Button>
+          {connected && <Button quiet size="sm" disabled={Boolean(pending)} onClick={disconnectSelection}>Disconnect wallet</Button>}
+        </div> : <div className="space-y-lg"><Button primary disabled className="w-full"><Wallet size={16} className="shrink-0" aria-hidden="true" />Connect Wallet</Button><p className="text-sm text-secondary">No compatible wallet found. Install or unlock a Sui Wallet Standard wallet and enable Mainnet, then return here.</p><a href="https://slush.app" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-sm rounded-md text-sm text-secondary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-focus-ring">Get a Sui wallet<ExternalLink size={13} className="shrink-0 text-fg-tertiary" aria-hidden="true" /></a><p className="text-xs text-tertiary">zkLogin and multisig login are not supported in this release.</p></div>}
+        <div className="mt-lg min-h-5 text-xs">{pending && <p role="status" className="flex items-center gap-sm text-secondary"><LoaderCircle size={14} className="shrink-0 animate-spin" aria-hidden="true" />{pending}</p>}{error && <p role="alert" className="break-words text-error-primary">{error}</p>}</div>
+        <div className="mt-lg flex flex-wrap items-center gap-sm"><Button quiet size="sm" disabled={Boolean(pending)} onClick={() => { setPending('Checking wallet session…'); void refresh() }}>Retry session check</Button>
           {auth?.demoAvailable && <Button disabled={Boolean(pending)} onClick={async () => {
             const id = ++generation.current
             mutation.current = true
             setPending('Opening offline demo…'); setError('')
             try { const result = await agentJson<WalletSession>('/auth/demo', { method: 'POST', body: '{}' }); if (id === generation.current) accept(result) }
-            catch (error) { setError(error instanceof Error ? error.message : 'Demo unavailable.') } finally { mutation.current = false; setPending('') }
-          }}>Try offline demo</Button>}</div>
+            catch (error) { if (id === generation.current) setError(redactBrowserText(error instanceof Error ? error.message : 'Demo unavailable.')) } finally { if (id === generation.current) { mutation.current = false; setPending('') } }
+          }} quiet size="sm">Try offline demo</Button>}</div>
+        <p className="mt-xl flex items-start gap-sm border-t border-secondary pt-xl text-xs text-tertiary"><ShieldCheck size={15} className="shrink-0" aria-hidden="true" />No funds are spent during login. Never enter a seed phrase or wallet private key. You approve every code edit separately.</p>
       </section>
-      <ol className="divide-y divide-secondary text-sm text-secondary">
-        <li className="flex items-start gap-md py-lg"><KeyRound size={18} className="shrink-0 text-fg-tertiary" /><div>Connect Tatum, a Walrus Memory delegate key, and AgentRouter.<p className="mt-xs text-xs text-tertiary">Each signed-in session has its own temporary server credentials. Never enter your wallet private key.</p></div></li>
-        <li className="flex items-start gap-md py-lg"><ShieldCheck size={18} className="shrink-0 text-fg-tertiary" /><div>Review changes and see which memories were recalled.<p className="mt-xs text-xs text-tertiary">With live capture, confirmed memories are stored through the official Walrus Mainnet relayer. Offline demo memory is ephemeral. Adaptation is not model retraining.</p></div></li>
-      </ol>
-      <details className="border-t border-secondary pt-lg"><summary className="cursor-pointer rounded-md text-xs text-tertiary focus-visible:ring-2 focus-visible:ring-focus-ring">Operator access token (only if configured)</summary>
-        <form className="mt-md flex items-center gap-sm" onSubmit={event => { event.preventDefault(); setWorkspaceToken(token); setToken(''); void refresh() }}><label htmlFor="gate-token" className="sr-only">Optional workspace bearer token</label><input id="gate-token" type="password" autoComplete="off" className={fieldClass} value={token} onChange={event => setToken(event.target.value)} /><Button type="submit">Unlock</Button></form>
-      </details>
-      <p className="text-xs text-tertiary">Use localhost or HTTPS on a server you trust. Wallet login does not encrypt browser caches or authorize a delegate key. <a className="rounded-md text-brand-primary underline focus-visible:ring-2 focus-visible:ring-focus-ring" href="#/console">Legacy operator console</a></p>
     </main>
+    <footer className="mx-auto w-full max-w-5xl border-t border-secondary px-xl py-xl sm:px-4xl">
+      <details className="mb-lg"><summary className="cursor-pointer rounded-md text-xs text-tertiary focus-visible:ring-2 focus-visible:ring-focus-ring">Operator access token (only if configured)</summary><form className="mt-md flex flex-wrap items-center gap-sm" onSubmit={event => { event.preventDefault(); setWorkspaceToken(token); setToken(''); void refresh() }}><label htmlFor="gate-token" className="sr-only">Optional workspace bearer token</label><input id="gate-token" type="password" autoComplete="off" maxLength={4096} disabled={Boolean(pending)} className={`${fieldClass} min-w-0 flex-1`} value={token} onChange={event => setToken(event.target.value)} /><Button type="submit" disabled={Boolean(pending) || !token}>Unlock</Button></form></details>
+      <p className="text-xs leading-relaxed text-tertiary">Use localhost or HTTPS on a server you trust. Wallet login does not encrypt browser caches or grant Walrus access. Memory adaptation is not model retraining. <a className="rounded-md text-secondary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-focus-ring" href="#/console">Legacy operator console</a></p>
+    </footer>
   </div>
 }

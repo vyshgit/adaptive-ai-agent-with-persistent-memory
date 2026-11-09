@@ -18,6 +18,7 @@ export default function MemoryChips({ memory }: { memory?: MemoryContext }) {
         <p className="mt-xs text-tertiary">{hit.tier || 'facts'} · distance {hit.distance.toFixed(2)}{hit.createdAt ? ` · ${hit.createdAt.slice(0, 10)}` : ''}</p>
       </li>)}
     </ul>
-    {memory.memoryUnavailable && <p className="mt-sm text-warning-primary">One memory tier could not be recalled.</p>}
+    {memory.lookups && memory.lookups > 1 && <p className="mt-sm text-tertiary">{memory.lookups} bounded context lookups ran before generation, including departure and travel preferences.</p>}
+    {memory.memoryUnavailable && <p className="mt-sm text-warning-primary">Some memory lookups were unavailable; recalled context may be incomplete.</p>}
   </details>
 }

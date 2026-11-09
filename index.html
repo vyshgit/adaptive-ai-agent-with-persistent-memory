@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RecallLoop — Talk, Plan, Build</title>
     <meta name="description" content="A wallet-authenticated coding workspace with reviewable changes and portable Walrus memory." />
+    <script>
+      // Theme only; no credentials are ever read from browser storage.
+      try { document.documentElement.dataset.theme = localStorage.getItem('recallloop.theme') === 'light' ? 'light' : 'dark' }
+      catch { document.documentElement.dataset.theme = 'dark' }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

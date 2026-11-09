@@ -5,7 +5,7 @@ import WalletGate from './agent/WalletGate.tsx'
 export default function AppShell() {
   const [hash, setHash] = useState(() => window.location.hash || '#/agent')
   const [dark, setDark] = useState(() => {
-    try { return localStorage.getItem('recallloop.theme') === 'dark' } catch { return false }
+    try { return localStorage.getItem('recallloop.theme') !== 'light' } catch { return true }
   })
   useEffect(() => {
     const change = () => setHash(window.location.hash || '#/agent')

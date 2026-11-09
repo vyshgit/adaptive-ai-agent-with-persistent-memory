@@ -18,13 +18,15 @@ export function agentFetch(path: string, init: RequestInit = {}) {
 export async function responseError(response: Response) {
   let message = `The server returned HTTP ${response.status}.`
   let retryable = response.status >= 500 || [408, 429].includes(response.status)
+  let code = ''
   try {
     const data = await response.json()
     if (data.code === 'wallet_required' || data.code === 'session_changed') window.dispatchEvent(new Event('recallloop-auth-changed'))
     if (typeof data.error === 'string') message = data.error
     if (typeof data.retryable === 'boolean') retryable = data.retryable
+    if (typeof data.code === 'string' && /^[a-z0-9_]{1,64}$/.test(data.code)) code = data.code
   } catch { /* Do not render upstream HTML or debug output. */ }
-  return Object.assign(new Error(redactBrowserText(message)), { retryable })
+  return Object.assign(new Error(redactBrowserText(message)), { retryable, code })
 }
 
 export async function agentJson<T>(path: string, init: RequestInit = {}, timeoutMs = 25_000): Promise<T> {

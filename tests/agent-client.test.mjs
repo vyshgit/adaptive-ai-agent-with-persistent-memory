@@ -243,9 +243,21 @@ test('browser HTTP failures respect retryability, refresh changed auth, and neve
   registerBrowserSecret('synthetic-error-secret')
   const error = await responseError(new Response(JSON.stringify({ code: 'session_changed', error: 'No synthetic-error-secret', retryable: false }), { status: 409 }))
   assert.equal(error.retryable, false)
+  assert.equal(error.code, 'session_changed')
   assert.equal(error.message, 'No [REDACTED]')
   assert.equal(events, 1)
   assert.equal((await responseError(new Response('<html>upstream debug</html>', { status: 502 }))).message, 'The server returned HTTP 502.')
+})
+
+test('browser HTTP diagnostics retain safe provider categories without exposing known credentials', async t => {
+  t.after(clearBrowserSecrets)
+  registerBrowserSecret('synthetic-provider-diagnostic-key')
+  for (const code of ['provider_invalid_key', 'provider_client_unapproved', 'provider_model_unavailable', 'provider_protocol_unsupported', 'provider_quota', 'provider_network']) {
+    const error = await responseError(new Response(JSON.stringify({ code, error: `${code}: synthetic-provider-diagnostic-key`, retryable: false }), { status: 502 }))
+    assert.equal(error.code, code)
+    assert.equal(error.message, `${code}: [REDACTED]`)
+    assert.equal(error.retryable, false)
+  }
 })
 
 test('browser SSE decoder handles byte-split Unicode/CRLF and reads stored after done', async () => {
