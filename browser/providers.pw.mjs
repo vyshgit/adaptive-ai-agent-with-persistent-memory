@@ -245,7 +245,7 @@ test('model, Tatum and Walrus verify or disconnect independently, with explicit 
   await settings.getByRole('button', { name: 'Verify & connect Walrus', exact: true }).click()
   await expect(settings.getByText('Owner & delegate verified', { exact: true })).toBeVisible()
   await settings.getByRole('tab', { name: 'Advanced', exact: true }).click()
-  await expect(settings).toContainText('Auto-memory can still use an existing live Walrus connection and incur costs')
+  await expect(settings).toContainText('Auto-memory can still use a live Walrus connection and incur costs')
   await settings.getByRole('button', { name: 'Use scripted mock model', exact: true }).click()
   await expect(settings.getByRole('status').filter({ hasText: 'Memory mode is unchanged' })).toBeVisible()
   expect(fixture.state).toMatchObject({ connection: { mode: 'mock' }, tatum: true, memory: true })

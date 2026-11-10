@@ -91,6 +91,15 @@ export default function AgentApp({ dark, onTheme, identity, cache, vault, onLogo
   useEffect(() => {
     if (builderEnabled && !identity.demo && !localChecked.current) { localChecked.current = true; void discoverLocalModels() }
   }, [builderEnabled, identity.demo])
+  useEffect(() => {
+    // The workspace is self-scrolling (chat, panels, dialogs scroll inside this
+    // shell). Lock the document scroller so a stray overflowing element — or an
+    // extension/focus-injected scroll — can never push the composer out of view.
+    const html = document.documentElement
+    html.style.overflow = 'hidden'
+    html.scrollTop = 0
+    return () => { html.style.overflow = '' }
+  }, [])
   async function disconnect() {
     if (disconnecting) return
     stopTask.current?.(); setDisconnecting(true); setDisconnectError('')
@@ -119,7 +128,7 @@ export default function AgentApp({ dark, onTheme, identity, cache, vault, onLogo
     </div>}
   </>
 
-  return <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-primary text-primary">
+  return <div className="relative flex h-dvh min-h-0 flex-col overflow-hidden bg-primary text-primary">
     {status ? builderEnabled
       ? <main className="flex min-h-0 flex-1"><BuilderWorkspace connection={status.llm} connections={status.modelConnections} connectionBlocked={loading || localModels.busy || Boolean(error)} memoryStatus={overview?.status || status.memory} memoryBinding={`${status.memory.mode}:${status.memoryConnection?.accountId || ''}:${status.memoryConnection?.publicKey || ''}:${status.memoryConnection?.verifiedAt || ''}`} handoffAccountId={!identity.demo && status.memoryConnection?.verified ? status.memoryConnection.accountId : null} preferences={preferences.values} onPreferences={preferences.update} onBusy={setBusy} onStored={() => { void refreshMemory() }} onModelSettings={() => setSettings('model')} onMemorySettings={() => setSettings('walrus')} headerActions={headerActions} headerNotices={headerNotices} demo={identity.demo} /></main>
       : <ConversationWorkspace status={status} overview={overview} chain={chain} loading={loading || Boolean(error)} memoryLoading={memoryLoading} cache={cache} preferences={preferences.values} onPreferences={preferences.update} headerActions={headerActions} headerNotices={headerNotices} demo={identity.demo} onMemoryRefresh={refreshMemory} onChainRefresh={refreshChain} onSettings={setSettings} onNotice={setNotice} onBusy={setBusy} stopTask={stopTask} />
