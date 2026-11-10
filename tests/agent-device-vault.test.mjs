@@ -278,7 +278,7 @@ test('encrypted profile count is bounded and malformed identities cannot replace
   for (let i = 1; i < MAX_VAULT_PROFILES; i++) await device.save('model', { ...model, profileId: `profile-${i}` })
   const original = store.getItem(device.storageKey)
   await assert.rejects(device.save('model', { ...model, profileId: 'one-too-many' }), { code: 'vault_invalid' })
-  for (const profileId of ['local-ollama', 'scripted-mock', 'bad|model', '', model.apiKey]) {
+  for (const profileId of ['scripted-mock', 'bad|model', '', model.apiKey]) {
     await assert.rejects(device.save('model', { ...model, profileId }), { code: 'vault_invalid' })
   }
   assert.equal(store.getItem(device.storageKey), original)

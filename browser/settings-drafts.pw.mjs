@@ -27,7 +27,7 @@ async function visibility(page, value) {
 test('unsubmitted API drafts and a selected provider model survive Settings sections and a credential tab, but closing Settings disposes credentials and catalogue eligibility', async ({ page, context }) => {
   const checkErrors = failOnPageErrors(page)
   const { fixture, settings } = await setup(page)
-  const keys = { model: 'SYNTHETIC_UNSUBMITTED_MODEL_DRAFT', tatum: 'SYNTHETIC_UNSUBMITTED_TATUM_DRAFT', delegate: '6'.repeat(64), token: 'SYNTHETIC_UNSUBMITTED_ACCESS_DRAFT' }
+  const keys = { model: 'SYNTHETIC_UNSUBMITTED_MODEL_DRAFT', tatum: 'SYNTHETIC_UNSUBMITTED_TATUM_DRAFT', delegate: '6'.repeat(64) }
   await settings.getByLabel('Model API key', { exact: true }).fill(keys.model)
   await chooseProviderModel(settings, 'synthetic-model')
   await section(settings, 'Tatum')
@@ -35,15 +35,12 @@ test('unsubmitted API drafts and a selected provider model survive Settings sect
   await section(settings, 'Walrus Memory')
   await settings.getByLabel('Walrus Memory account object ID', { exact: true }).fill(SYNTHETIC_ACCOUNT_ID)
   await settings.getByLabel('Delegate private key', { exact: true }).fill(keys.delegate)
-  await section(settings, 'Advanced')
-  await settings.getByLabel('Workspace bearer token', { exact: true }).fill(keys.token)
   const credentialTab = await context.newPage()
   await credentialTab.goto('about:blank')
   try {
     await visibility(page, 'hidden')
     await page.bringToFront()
     await visibility(page, 'visible')
-    await expect(settings.getByLabel('Workspace bearer token', { exact: true })).toHaveValue(keys.token)
     await section(settings, 'Walrus Memory')
     await expect(settings.getByLabel('Walrus Memory account object ID', { exact: true })).toHaveValue(SYNTHETIC_ACCOUNT_ID)
     await expect(settings.getByLabel('Delegate private key', { exact: true })).toHaveValue(keys.delegate)
@@ -63,8 +60,6 @@ test('unsubmitted API drafts and a selected provider model survive Settings sect
     await expect(fresh.getByLabel('Tatum API key', { exact: true })).toHaveValue('')
     await section(fresh, 'Walrus Memory')
     await expect(fresh.getByLabel('Delegate private key', { exact: true })).toHaveValue('')
-    await section(fresh, 'Advanced')
-    await expect(fresh.getByLabel('Workspace bearer token', { exact: true })).toHaveValue('')
     checkErrors()
   } finally { await visibility(page, 'visible'); await credentialTab.close() }
 })

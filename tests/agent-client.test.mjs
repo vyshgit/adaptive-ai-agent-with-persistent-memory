@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { registerBrowserSecret, clearBrowserSecrets, redactBrowserText, scopedCacheKey, flushCacheOnExit } from '../src/agent/clientSafety.ts'
 import { createSession, normaliseSessions, loadSessions, saveSessions, clearSessionCache, SESSION_KEY, MAX_SESSIONS, MAX_MESSAGES } from '../src/agent/sessionStore.ts'
 import { starterProject, normaliseProject, loadProject, saveProject, selectedProject, validFilePath, importTextFiles, applyProposal, PROJECT_KEY } from '../src/agent/project.ts'
-import { agentFetch, agentJson, readAgentSse, responseError, resetSessionSecrets, setSessionTag, setWorkspaceToken } from '../src/agent/api.ts'
+import { agentFetch, agentJson, readAgentSse, responseError, resetSessionSecrets, setSessionTag } from '../src/agent/api.ts'
 
 function storage() {
   const data = new Map()
@@ -215,19 +215,16 @@ test('proposal application is browser-only, requires an unchanged preimage, and 
   assert.equal(created.activeFile, 'src/new.ts')
 })
 
-test('browser API binds the current session and keeps its operator token in memory through session-secret resets', async t => {
+test('browser API binds the current session and keeps credentials in memory through session-secret resets', async t => {
   const original = globalThis.fetch
-  t.after(() => { globalThis.fetch = original; setWorkspaceToken(''); setSessionTag(null); clearBrowserSecrets() })
+  t.after(() => { globalThis.fetch = original; setSessionTag(null); clearBrowserSecrets() })
   let init
   globalThis.fetch = async (url, options) => { assert.equal(url, '/api/agent/models'); init = options; return new Response('[]', { headers: { 'Content-Type': 'application/json' } }) }
-  const token = 'synthetic-operator-token-at-least-32-chars'
-  setWorkspaceToken(token); setSessionTag('current-tag')
+  setSessionTag('current-tag')
   registerBrowserSecret('synthetic-previous-model-key')
   resetSessionSecrets()
-  assert.equal(redactBrowserText(token), '[REDACTED]')
   assert.equal(redactBrowserText('synthetic-previous-model-key'), 'synthetic-previous-model-key')
   await agentFetch('/models')
-  assert.equal(init.headers.get('Authorization'), `Bearer ${token}`)
   assert.equal(init.headers.get('X-RecallLoop-Session'), 'current-tag')
   assert.equal(init.credentials, 'same-origin')
   assert.equal(init.cache, 'no-store')

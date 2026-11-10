@@ -1,4 +1,3 @@
-import type { BuilderMode } from './builderTypes.ts'
 import type { Connection, WorkspaceMode } from './types.ts'
 import type { WorkspaceCache } from './workspaceCache.ts'
 import { redactBrowserText, scopedCacheKey } from './clientSafety.ts'
@@ -18,7 +17,6 @@ export interface WorkspacePreferences {
   provider?: string
   providers?: Record<string, ProviderPreference>
   accountId?: string
-  builder?: { explorer?: boolean; autoRecall?: boolean; mode?: BuilderMode; model?: ModelPreference; cwd?: string; seconds?: number; outputFolder?: string; entry?: string }
   conversation?: { sidebar?: boolean; mode?: WorkspaceMode; stream?: boolean; model?: ModelPreference }
 }
 export type UpdatePreferences = (change: (current: WorkspacePreferences) => WorkspacePreferences) => void
@@ -74,18 +72,6 @@ export function normalisePreferences(value: unknown): WorkspacePreferences {
   if (Object.keys(providers).length) clean.providers = providers
   const accountId = safeText(raw.accountId, 66)
   if (accountId && /^0x[a-f\d]{1,64}$/i.test(accountId)) clean.accountId = accountId
-  const builder = record(raw.builder), local: NonNullable<WorkspacePreferences['builder']> = {}
-  if (typeof builder.explorer === 'boolean') local.explorer = builder.explorer
-  if (typeof builder.autoRecall === 'boolean') local.autoRecall = builder.autoRecall
-  if (builder.mode === 'build' || builder.mode === 'plan') local.mode = builder.mode
-  const localModel = modelPreference(builder.model)
-  if (localModel) local.model = localModel
-  for (const field of ['cwd', 'outputFolder', 'entry'] as const) {
-    const path = safePath(builder[field])
-    if (path) local[field] = path
-  }
-  if (typeof builder.seconds === 'number' && Number.isInteger(builder.seconds) && builder.seconds >= 1 && builder.seconds <= 120) local.seconds = builder.seconds
-  if (Object.keys(local).length) clean.builder = local
   const conversation = record(raw.conversation), hosted: NonNullable<WorkspacePreferences['conversation']> = {}
   if (typeof conversation.sidebar === 'boolean') hosted.sidebar = conversation.sidebar
   if (typeof conversation.stream === 'boolean') hosted.stream = conversation.stream

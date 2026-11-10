@@ -19,10 +19,10 @@ export function syntheticConnection(overrides = {}) {
 export const emptyConnection = () => ({ mode: 'unconfigured', model: '', models: [], apiStyle: 'responses', baseUrl: 'https://api.openai.com/v1',
   toolsEnabled: true, source: 'environment', verified: false, verification: null, lastVerificationFailure: null, expiresAt: null })
 
-export async function installConnectionFixture(page, { connection = emptyConnection(), connections = connection.mode === 'unconfigured' ? [] : [connection], localConnection = null, tatum = false, memory = false, accountId = SYNTHETIC_ACCOUNT_ID } = {}) {
+export async function installConnectionFixture(page, { connection = emptyConnection(), connections = connection.mode === 'unconfigured' ? [] : [connection], tatum = false, memory = false, accountId = SYNTHETIC_ACCOUNT_ID } = {}) {
   const auth = await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())
   const state = { connection: connections.find(item => item.id === connection.id) || connections.at(-1) || emptyConnection(),
-    modelConnections: [...connections], localConnection, tatum, memory, accountId, memoryEpoch: 0 }
+    modelConnections: [...connections], tatum, memory, accountId, memoryEpoch: 0 }
   function install(next, select = true) {
     const index = state.modelConnections.findIndex(item => item.id === next.id)
     if (index < 0) state.modelConnections.push(next)
@@ -100,10 +100,6 @@ export async function installConnectionFixture(page, { connection = emptyConnect
     } else if (path === '/models/discover') {
       json = { success: true, baseUrl: entry.body.baseUrl, apiStyle: entry.body.apiStyle, verified: false, discovered: catalog.discovered,
         models: catalog.models.map(item => typeof item === 'string' ? { id: item, label: item } : { ...item }) }
-    } else if (path === '/models/local') {
-      if (state.localConnection) install(state.localConnection, false)
-      else remove('local-ollama')
-      json = { success: true, available: Boolean(state.localConnection), connection: state.localConnection }
     } else if (path === '/connect') {
       const next = entry.body.mode === 'mock' ? { ...emptyConnection(), id: 'scripted-mock', name: 'Scripted mock', mode: 'mock', model: 'recallloop-mock',
         models: [{ id: 'recallloop-mock', label: 'recallloop-mock' }], baseUrl: '', apiStyle: 'chat', source: 'browser-session' }

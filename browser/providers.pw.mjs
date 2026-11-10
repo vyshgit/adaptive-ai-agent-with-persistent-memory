@@ -395,19 +395,3 @@ for (const provider of [
   expect(fixture.state.connection.model).toBe('synthetic-model')
   checkErrors()
 })
-
-test('a failed workspace token refresh is reported rather than claiming the tab was unlocked', async ({ page }) => {
-  const checkErrors = failOnPageErrors(page)
-  await installWallet(page)
-  await signIn(page)
-  const settings = await openSettings(page, 'Advanced')
-  const key = 'synthetic-invalid-workspace-access-token'
-  await page.route('**/api/agent/status', route => route.fulfill({ status: 403, json: { code: 'workspace_forbidden', error: 'Synthetic access token rejected.', retryable: false } }))
-  await settings.getByLabel('Workspace bearer token', { exact: true }).fill(key)
-  await settings.getByRole('button', { name: 'Unlock this tab', exact: true }).click()
-  await expect(settings.getByRole('alert')).toContainText('Could not refresh workspace access')
-  await expect(settings.getByLabel('Workspace bearer token', { exact: true })).toHaveValue('')
-  await expect(settings.getByText('Workspace access token held in memory for this tab only.', { exact: true })).toHaveCount(0)
-  expect(JSON.stringify(await cachedValues(page))).not.toContain(key)
-  checkErrors()
-})

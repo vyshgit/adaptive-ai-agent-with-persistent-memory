@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { KeyRound, ShieldCheck, Server, Database, ExternalLink, RefreshCw, AlertCircle, LoaderCircle } from 'lucide-react'
 import type { Connection, ProviderModel, WalletSession, WorkspaceStatus } from './types.ts'
-import { agentJson, setWorkspaceToken } from './api.ts'
+import { agentJson } from './api.ts'
 import { newId, redactBrowserText, registerBrowserSecret } from './clientSafety.ts'
 import { PROVIDERS, providerForUrl, modelStatus, capabilityLabel, availableConnections, connectionLabel, modelLabel } from './providers.ts'
 import { Button, Checkbox, Modal, Badge, CopyButton, Tabs, fieldClass } from './ui.tsx'
@@ -21,7 +21,7 @@ function HelpLink({ href, children }: { href: string; children: string }) {
   return <a href={href} target="_blank" rel="noopener noreferrer" className={linkClass}>{children}<ExternalLink size={13} className="shrink-0 text-fg-tertiary" aria-hidden="true" /></a>
 }
 
-export default function SettingsModal({ connection: defaultConnection, status, identity, vault, preferences, onPreferences, onClearPreferences, preferenceWarning, onClose, onRefresh, busy, initialSection = 'model', localWorkspace = false, localModels, onLocalModels }: { connection?: Connection; status?: WorkspaceStatus; identity: WalletSession; vault: DeviceVault | null; preferences: WorkspacePreferences; onPreferences: UpdatePreferences; onClearPreferences: () => boolean; preferenceWarning: string; onClose: () => void; onRefresh: () => Promise<boolean>; busy: boolean; initialSection?: Section; localWorkspace?: boolean; localModels?: { busy: boolean; message: string }; onLocalModels?: () => void }) {
+export default function SettingsModal({ connection: defaultConnection, status, identity, vault, preferences, onPreferences, onClearPreferences, preferenceWarning, onClose, onRefresh, busy, initialSection = 'model' }: { connection?: Connection; status?: WorkspaceStatus; identity: WalletSession; vault: DeviceVault | null; preferences: WorkspacePreferences; onPreferences: UpdatePreferences; onClearPreferences: () => boolean; preferenceWarning: string; onClose: () => void; onRefresh: () => Promise<boolean>; busy: boolean; initialSection?: Section }) {
   const vaultState = useDeviceVault(vault)
   const profiles = availableConnections(defaultConnection, status?.modelConnections)
   const [selectedProfile, setSelectedProfile] = useState(defaultConnection?.id || '')
@@ -34,13 +34,12 @@ export default function SettingsModal({ connection: defaultConnection, status, i
   const [apiStyle, setApiStyle] = useState<'responses' | 'chat'>(initialSetup.apiStyle)
   const [model, setModel] = useState(initialSetup.model)
   const [apiKey, setApiKey] = useState('')
-  const [profileId, setProfileId] = useState(() => connection?.mode === 'live' && connection.source !== 'local-discovery' ? connection.id || newId() : newId())
+  const [profileId, setProfileId] = useState(() => connection?.mode === 'live' ? connection.id || newId() : newId())
   const [profileName, setProfileName] = useState(connection?.name || '')
   const [catalog, setCatalog] = useState<{ baseUrl: string; models: ProviderModel[]; discovered: boolean } | null>(null)
   const [manualModel, setManualModel] = useState(false)
   const [tools, setTools] = useState(connection?.toolsEnabled !== false)
   const [checkCapabilities, setCheckCapabilities] = useState(false)
-  const [token, setToken] = useState('')
   const [pending, setPending] = useState<{ section: Section; message: string } | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [tatumKey, setTatumKey] = useState('')
@@ -52,7 +51,7 @@ export default function SettingsModal({ connection: defaultConnection, status, i
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    const leave = () => { controller.current?.abort(); vault?.lock(); setApiKey(''); setTatumKey(''); setDelegateKey(''); setToken('') }
+    const leave = () => { controller.current?.abort(); vault?.lock(); setApiKey(''); setTatumKey(''); setDelegateKey('') }
     // Switching browser tabs is not logout. Keep the form and in-flight checks;
     // page exit, explicit lock and wallet/session revocation still stop access.
     let unlocked = vault?.getSnapshot().unlocked
@@ -69,7 +68,7 @@ export default function SettingsModal({ connection: defaultConnection, status, i
     if (!editing.model && connection?.mode === 'live') {
       setBaseUrl(connection.baseUrl); setPreset(providerForUrl(connection.baseUrl).id); setApiStyle(connection.apiStyle)
       setModel(connection.model); setTools(connection.toolsEnabled)
-      setProfileId(connection.source === 'local-discovery' ? newId() : connection.id || newId()); setProfileName(connection.name || '')
+      setProfileId(connection.id || newId()); setProfileName(connection.name || '')
     }
   }, [connection, editing.model])
   const locked = Boolean(pending) || busy || vaultState.busy
@@ -111,7 +110,7 @@ export default function SettingsModal({ connection: defaultConnection, status, i
       abort.signal.throwIfAborted()
       if (path === '/connect' && result.connection) {
         const chosen = connectionPreference(result.connection, result.connection.model)
-        onPreferences(current => ({ ...current, builder: { ...current.builder, model: chosen }, conversation: { ...current.conversation, model: chosen } }))
+        onPreferences(current => ({ ...current, conversation: { ...current.conversation, model: chosen } }))
       }
       if (target === 'model' && result.connection?.mode === 'live' && (path === '/connect' || !editing.model)) {
         setBaseUrl(result.connection.baseUrl); setPreset(providerForUrl(result.connection.baseUrl).id); setApiStyle(result.connection.apiStyle)
@@ -217,13 +216,6 @@ export default function SettingsModal({ connection: defaultConnection, status, i
       if (mounted.current) setPending(null)
     }
   }
-  async function updateToken(value: string, message: string) {
-    if (locked) return
-    setWorkspaceToken(value); setToken(''); setPending({ section: 'advanced', message: 'Refreshing workspace access…' })
-    try { const refreshed = await onRefresh(); if (mounted.current) setFeedback({ section: 'advanced', message: refreshed ? message : 'Could not refresh workspace access. Retry the session check.', error: !refreshed }) }
-    catch { if (mounted.current) setFeedback({ section: 'advanced', message: 'Could not refresh workspace access. Retry the session check.', error: true }) }
-    finally { if (mounted.current) setPending(null) }
-  }
   return <Modal title="Workspace settings" onClose={close} bodyClassName="workspace-scroll" footer={<>
     <span className="mr-auto self-center text-xs text-tertiary">{identity.demo ? 'Demo · no live credentials' : `Session ends ${new Date(identity.expiresAt!).toLocaleTimeString()}`}</span>
     <Button onClick={close}>{pending ? 'Close & cancel check' : 'Done'}</Button>
@@ -235,7 +227,6 @@ export default function SettingsModal({ connection: defaultConnection, status, i
       {section === 'model' && <section className="space-y-lg" aria-label="Model provider connection">
         <div className="flex flex-wrap items-center justify-between gap-md"><h3 className="flex items-center gap-sm text-md font-semibold"><KeyRound size={17} className="shrink-0 text-fg-secondary" aria-hidden="true" />Model provider</h3><Badge tone={currentModelStatus.tone}>{currentModelStatus.label}</Badge></div>
         {profiles.length > 0 && <div className="flex flex-wrap items-end gap-md"><div className="min-w-0 flex-1"><label htmlFor="connected-provider" className="mb-sm block text-sm font-medium text-secondary">Connected provider profile</label><select id="connected-provider" className={fieldClass} value={connection?.id || ''} disabled={locked} onChange={event => { setSelectedProfile(event.target.value); setEditing(old => ({ ...old, model: false })); setApiKey(''); invalidateCatalog(); setFeedback(null) }}>{profiles.map((profile, index) => <option key={profile.id || index} value={profile.id || ''}>{connectionLabel(profile)}</option>)}</select></div><Button disabled={disabled || profiles.length >= 12} onClick={addProvider}>Add provider</Button></div>}
-        {localWorkspace && !identity.demo && <div className="space-y-sm border-b border-secondary pb-lg"><div className="flex flex-wrap items-center justify-between gap-sm"><p className="text-sm font-medium">Local models · no API key</p><Button quiet size="sm" disabled={locked} onClick={onLocalModels}><RefreshCw size={14} className="shrink-0" aria-hidden="true" />Refresh local models</Button></div><p className="text-xs text-tertiary" role="status">{localModels?.message || 'Checking installed Ollama models…'}</p><p className="text-xs text-tertiary">Only installed local models are included. Cloud models need their provider connection.</p></div>}
         <p className="text-xs text-tertiary">Load models does not connect or generate. Connect / Verify sends one small billable check (up to 256 output tokens).</p>
         {connection?.mode === 'live' && <>
           <div className="min-w-0 space-y-sm text-sm text-secondary"><p className="break-all font-mono">{connection.model}</p><p className="break-all text-xs text-tertiary">{connection.baseUrl} · {connection.apiStyle === 'responses' ? 'Responses' : 'Chat Completions'}</p></div>
@@ -329,14 +320,8 @@ export default function SettingsModal({ connection: defaultConnection, status, i
         <div><h3 className="mb-md text-sm font-semibold">Remembered fields</h3><p className="text-sm text-tertiary">Provider, model, and workspace options stay remembered for this login; closing Settings or reloading keeps them and logout or a wallet change clears them. Credentials, catalogues, and consents are never cached here.</p><Button quiet size="sm" className="mt-md" disabled={locked} onClick={() => { const cleared = onClearPreferences(); setFeedback({ section: 'advanced', error: !cleared, message: cleared ? 'Remembered fields cleared. Open forms and active connections are unchanged; future field changes will be remembered again.' : 'Remembered fields could not be cleared. Clear this tab’s site data before sharing the browser.' }) }}>Forget remembered fields</Button>{preferenceWarning && <p role="status" className="mt-md text-xs text-warning-primary">{preferenceWarning}</p>}</div>
         <DeviceVaultPanel vault={vault} busy={locked} onReconnect={profileId => { void reconnectSaved(profileId) }} />
         <LegacyCacheCleanup />
-        <div><h3 className="mb-md text-lg font-semibold">Workspace access token</h3><p className="mb-lg text-sm text-tertiary">Only needed when the server operator configures an extra access gate. It does not replace signed wallet login.</p>
-          <form onSubmit={event => { event.preventDefault(); void updateToken(token, 'Workspace access token held in memory for this tab only.') }}>
-            <label htmlFor="workspace-token" className="mb-sm block text-sm font-medium text-secondary">Workspace bearer token</label><input id="workspace-token" type="password" autoComplete="off" maxLength={4096} className={fieldClass} value={token} onChange={event => secret(setToken, event.target.value)} disabled={locked} placeholder="Only when an operator gate is configured" />
-            <div className="mt-lg flex flex-wrap gap-sm"><Button type="submit" disabled={locked || !token}>Unlock this tab</Button><Button disabled={locked} onClick={() => { void updateToken('', 'Workspace access token cleared from this tab.') }}>Clear token</Button></div>
-          </form>
-        </div>
         <div className="border-t border-secondary pt-xl"><details><summary className="cursor-pointer rounded-md text-sm text-secondary focus-visible:ring-2 focus-visible:ring-focus-ring">Embedding configuration is separate</summary><p className="mt-md text-sm text-tertiary">Walrus Memory embeddings come from the relayer, not your workspace model key. The optional CLI vector experiment uses a separate operator <code>OPENAI_API_KEY</code>; it is billable and outside this wallet workspace.</p></details></div>
-        <div className="border-t border-secondary pt-xl"><details><summary className="cursor-pointer rounded-md text-sm text-secondary focus-visible:ring-2 focus-visible:ring-focus-ring">Private session workspace</summary><p className="mt-md text-sm text-tertiary">{localWorkspace ? 'Local source, drafts, task conversation, terminal output and approvals stay in this page’s memory only; reloading loses unsaved work while disk changes remain. Walrus checkpoints are reviewed context, not project backups.' : 'New chats and files cache to this tab only, keyed to this login; reload keeps them and logout, expiry or an account change clears them — export first. Storage is unencrypted, so use separate browser profiles on shared devices.'}</p></details></div>
+        <div className="border-t border-secondary pt-xl"><details><summary className="cursor-pointer rounded-md text-sm text-secondary focus-visible:ring-2 focus-visible:ring-focus-ring">Private session workspace</summary><p className="mt-md text-sm text-tertiary">New chats and files cache to this tab only, keyed to this login; reload keeps them and logout, expiry or an account change clears them — export first. Storage is unencrypted, so use separate browser profiles on shared devices.</p></details></div>
         <div className="border-t border-secondary pt-xl"><h3 className="mb-md text-sm font-semibold">Scripted model for testing</h3><p className="mb-lg text-sm text-tertiary">A deterministic mock, not a live LLM. Auto-memory can still use a live Walrus connection and incur costs; turn it off in the workspace when needed.</p><Button disabled={locked} onClick={() => { void request('advanced', '/connect', { mode: 'mock' }, 'Scripted mock model selected. Memory mode is unchanged; this is not live-generation evidence.') }}>Use scripted mock model</Button></div>
       </section>}
       {pending && <p role="status" className="mt-xl flex flex-wrap items-center gap-md text-sm text-secondary"><LoaderCircle size={16} className="shrink-0 animate-spin" aria-hidden="true" />{pending.message}{controller.current && <Button size="sm" quiet onClick={() => controller.current?.abort()}>Cancel check</Button>}</p>}

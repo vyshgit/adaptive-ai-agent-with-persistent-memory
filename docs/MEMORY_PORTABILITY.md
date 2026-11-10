@@ -116,39 +116,19 @@ Tool names/deadlines vary by version; inspect advertised capabilities and the cu
 reference rather than assuming a status tool exists. A healthy relayer, copied notes, fixture,
 or mock blob is not successful cross-tool or Mainnet validation.
 
-## Reviewed local-builder checkpoints
-
-The [local browser builder](LOCAL_BUILDER.md) uses the same owned MemWal account and wallet
-facts namespace. In the local project's **Walrus → New checkpoint** drawer, write a small project/revision reference,
-reviewed preferences, decisions/actual outcomes, and next steps. Inspect the assembled text
-and separately consent to **Save reviewed checkpoint**. File/command approval never saves it
-automatically, and the coding model has no memory-write tool.
-
-Default **Auto-memory** also extracts facts from eligible current-user task prose after
-successful completion, in that same facts namespace. It excludes files, prior history,
-assistant output and terminal logs, with filters for obvious code/quotes/filler, known secrets
-and explicit privacy requests. Check capture status for confirmed blob IDs; pending jobs may
-finish later. This is independent of reviewed checkpoints and the other client's save settings.
-See [automatic capture](MEMORY_PRIVACY.md#automatic-context-capture).
-
-After a confirmed blob ID, a trusted Claude Code/Codex client can recall that context from
-the exact handoff facts namespace. Conversely, the builder can **Recall and review**, then
-explicitly select relevant wallet memories for a fresh coding task. Raw-memory retrieval
-requires separate consent. Expiry or memory replacement/recheck removes old recall and
-checkpoint authority, even when reconnecting the same account.
+## Memory is context, not a project
 
 This carries **context, not the project**. There is no automatic source synchronization,
-full workspace restoration, transcript/terminal-log backup, credential sharing, or approval
+full workspace restoration, transcript backup, credential sharing, or approval
 transfer. Keep source dumps/secrets out of reviewed fields. A revision/reference is user
 supplied, not independently verified, and recalled text is never authorization to reconnect
 a model, edit files, run commands, or perform transactions. Each tool retains its own
-local project, credentials, reviews, and independently chosen save consent.
+local project, credentials, and independently chosen save consent.
 
 ## Leaving a tool does not erase memory
 
 RecallLoop logout removes its server connections/tab chat/project cache and locks its optional
-device vault. It also clears local-builder page state and closes workers/preview/approval
-capabilities; approved disk files remain. An explicitly saved encrypted copy remains until **Forget saved connections**
+device vault. An explicitly saved encrypted copy remains until **Forget saved connections**
 is confirmed; it is not exported to the other client. `memwal_logout` removes that client's
 selected local credential file. None of these actions revokes the onchain delegate or erases
 remote memories. Revoke unwanted delegates in the official dashboard.

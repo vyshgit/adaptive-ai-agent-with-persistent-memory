@@ -13,8 +13,6 @@ import { authenticateAgent } from '../../server/agent-auth.mjs'
 import { authenticateAdmin } from '../../server/admin-auth.mjs'
 import { credentialGuard } from '../../server/credential-guard.mjs'
 import { AppError, publicError } from '../../server/safety.mjs'
-import { createBuilderService } from '../../server/builder/service.mjs'
-import { localBuilderGuard } from '../../server/builder/policy.mjs'
 
 export function deferred() {
   let resolve, reject
@@ -49,13 +47,10 @@ export async function workspaceHttp(t, options = {}) {
   const connections = createConnectionStore(options.auth?.clock ? { clock: options.auth.clock } : {})
   const llm = options.llm || createLlm({ env, mockDelayMs: 0 })
   const memory = options.memory || createMemoryService({ env: { RECALLLOOP_MEMORY_MODE: 'mock' }, chain: { checkpoint: async () => null } })
-  const builder = options.builder ? await createBuilderService({ enabled: true, assertSession: wallets.assertActive, secrets: services.secrets, env,
-    ...options.builder }) : null
   const app = express()
-  if (builder) app.use(localBuilderGuard)
   app.use(credentialGuard)
   app.use('/api/agent', createWorkspaceAuth(env), express.json({ limit: '1mb', inflate: false }), wallets.middleware,
-    createAgentRouter({ llm, connections, wallets, services, builder, env }))
+    createAgentRouter({ llm, connections, wallets, services, env }))
   app.use('/api/memory', express.json({ limit: '1mb' }), createMemoryRouter({ memory, authenticateAgent, authenticateAdmin }))
   app.use(express.json({ limit: '32kb' }))
   app.post('/api/legacy-limit', (_req, res) => res.json({ success: true }))
@@ -72,7 +67,6 @@ export async function workspaceHttp(t, options = {}) {
   const origin = `http://127.0.0.1:${server.address().port}`
   t.after(async () => {
     await wallets.close()
-    await builder?.close()
     memory.destroy?.()
     const closed = new Promise(resolve => server.close(resolve))
     server.closeAllConnections()
@@ -108,5 +102,5 @@ export async function workspaceHttp(t, options = {}) {
     }
     return { request, json, login, demo: () => json('/auth/demo', { body: {} }), get cookie() { return cookie }, get tag() { return tag } }
   }
-  return { app, origin, wallets, services, connections, sessions, memory, builder, client, cookieName: WALLET_COOKIE }
+  return { app, origin, wallets, services, connections, sessions, memory, client, cookieName: WALLET_COOKIE }
 }

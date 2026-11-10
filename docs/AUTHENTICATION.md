@@ -4,12 +4,11 @@ RecallLoop has **three independent authorization layers**. None substitutes for 
 
 | Layer | Applies to | Proves / grants |
 | --- | --- | --- |
-| Workspace origin + optional operator bearer gate | All `/api/agent/*` | Access to this app origin/deployment, not a user identity. |
+| Workspace origin policy | All `/api/agent/*` | Access to this app origin/deployment, not a user identity. |
 | Signed Sui wallet session | Protected workspace routes | Possession of a wallet signing key, not authorization for MemWal or spending. |
 | Agent/admin bearer keys | `/api/memory/*`, `/api/walrus/*` | External logical-agent scope or legacy/operator controls, not wallet login. |
 
-The [local builder](LOCAL_BUILDER.md) adds separate folder-read consent and single-use
-file/command/checkpoint approvals. None of the identity/deployment layers above authorizes
+None of the identity/deployment layers above authorizes
 execution, reconnects a model, or approves a memory write on its own.
 
 ## Wallet login
@@ -71,10 +70,8 @@ conveniences, not authorization against a person inspecting an active browser pr
 Use separate browser/OS profiles on shared devices and export needed work before logout.
 Logout does not delete remote Walrus memories or revoke the onchain delegate.
 
-Local-builder source views, editor drafts, task history, terminal output, and approval/recall
-controls are stricter: **page memory only**, with no browser-storage/vault/Walrus autosave.
-Switching surfaces preserves page drafts; logout/folder closure invalidates them and awaits
-worker cleanup. Approved local files remain on disk and are not restored by a new login.
+User credential connections use targeted verification and disconnect controls; disconnect
+never deletes remote memories.
 
 ### Explicit offline demo
 
@@ -186,16 +183,15 @@ private wallet memory. See [privacy boundaries](MEMORY_PRIVACY.md).
 
 Assistant Markdown is untrusted display content. Raw HTML is ignored, remote images are
 not loaded, and links are limited to explicit credential-free HTTP(S) URLs. Formatting never
-executes code or approves an action. Conversation browser edits and local-builder disk/
-command reviews remain separate. See [client formatting](API.md#client-response-formatting).
+executes code or approves an action. Conversation browser edits remain separate. See [client formatting](API.md#client-response-formatting).
 
 ## Origin and deployment policy
 
-The default server binds `127.0.0.1:3000`. Development with no operator token accepts local
+The default server binds `127.0.0.1:3000`. Development accepts local
 loopback requests, but still rejects cross-origin/fetch-site requests and DNS-rebinding
 Hosts. Protected routes still require signed wallet or explicit demo identity.
 
-For an HTTPS remote deployment **without local execution**:
+For an HTTPS remote deployment:
 
 - Build the UI and run `npm start`; bind externally only when intentionally deploying.
 - Set `RECALLLOOP_ALLOWED_ORIGINS` to the exact public origin, for example
@@ -203,12 +199,6 @@ For an HTTPS remote deployment **without local execution**:
   the reverse proxy; an allowlist entry is not a grant of arbitrary cross-origin access.
 - Use a trusted HTTPS reverse proxy. Explicit HTTPS origin policy allows secure cookies
   without blindly trusting forwarded headers. Do not expose development/Vite serving.
-- Consider `RECALLLOOP_WORKSPACE_TOKEN` (random 32+ characters) as an additional operator
-  gate. Once configured, the correct bearer token is mandatory even for same-origin calls.
-  Enter it in the sign-in screen's operator-access section; it is held in that tab's memory.
-- `RECALLLOOP_REQUIRE_WORKSPACE_AUTH=true` without a token intentionally locks the API.
-  It does **not** turn a forged Origin header into login. A token does not bypass
-  cross-origin checks and does not remove the wallet-session requirement.
 - Disable `RECALLLOOP_ENABLE_DEMO` for a live-only deployment. Configure independent
   external-agent/admin keys or restrict their routes at the proxy.
 - Allow only trusted model hosts. Additional `AGENT_LLM_ALLOWED_HOSTS` and production
@@ -225,60 +215,6 @@ The opt-in credential vault is browser-local, not a server storage replacement. 
 proxy, sign-in peers may collapse into the proxy address; plan edge abuse controls rather
 than treating these in-process bounds as production capacity guarantees. The preview
 provides no durable runtime server storage; no database or new disk index is introduced.
-
-### Additional local execution boundary
-
-The explicit local launcher defaults to the invocation folder, including npm's `INIT_CWD`;
-`npm run builder -- --workspace /absolute/project` overrides the starting location and supplies
-`--local --workspace` to the app. After login, authenticated same-origin folder browsing and
-explicit consent can select another existing local project while idle. The selection is
-login-scoped; opening compares the observed workspace ID, validates the destination first,
-and revokes the former workspace's approvals, recall and preview capabilities on success.
-Neither model tools nor remembered context can select a root. Native execution is unavailable
-in ordinary/hosted startup and for `/data` preview paths. The local app's whole HTTP/Vite
-surface and upgrades require loopback peers/Hosts and same-origin HTTP; remote-origin policy,
-operator tokens, forwarded headers, and wallet credentials cannot turn it into a hosted bridge.
-Do not expose this mode through a remote reverse proxy.
-
-Login is still required, followed by explicit project-trust consent and a permission mode.
-Opening starts no engine/model/command/memory work. Standard authorizes routine scoped text
-creates/updates and a narrowly allowlisted, hardened inspection grammar; deletion, execution/
-dependency configuration, installs, project scripts, and unknown commands need an immutable,
-expiring, once-only human approval. Strict requires that review for every write and command.
-Changing modes revokes pending action reviews. The server binds requests to the current login/
-workspace; cwd and exact disk preimages are rechecked before execution, even for automatic work.
-Plan is parent-enforced read-only: no file mutation or noninspection command is approvable.
-Models receive no
-HTTP cookie/session tag, approval capability, wallet identity, Tatum key, or MemWal delegate.
-An accepted agent approval is not proof of execution; results arrive on its parent task stream.
-
-Coding/command workers have private HOME/XDG/temp directories, allowlisted environments,
-fresh SDK history, an in-memory database, and no persisted events or inherited engine config/
-credentials/plugins/MCP/skills/references. A task receives only its selected provider inputs;
-provider credentials are not supplied to the shell or SDK registry. Model requests are
-constrained to the selected endpoint/model while active, with bounded traffic and no automatic
-retries/compaction. The shared gateway injects the selected profile's credential into a fresh
-header set immediately before dispatch and removes its mutable header references in `finally`,
-including error/abort paths. Session/vault retention remains intentional; JavaScript and HTTP
-internals can retain copies, so this is not secure heap erasure. Non-secret attribution and
-organization/workspace headers are allowlisted and host-scoped. Disabled or known-unsupported
-tools have no parent/worker execution authority.
-Follow-ups supply only recent bounded page-conversation prose, not old source/tool snapshots,
-capabilities, SDK state, or provider-stored references. Remembered context never grants authority.
-
-**Native commands are not sandboxed.** They, project scripts, dependencies, and Git
-hooks run with the user's OS permissions and can read/change other files, find other keys on
-disk, access the network, or spend resources. Recalled memory cannot supply this grant, and
-Standard project consent admits only the narrow inspection grammar, not arbitrary shell work.
-Login isolation does not create separate copies when logins select the same project,
-or separate OS users. Stop/logout closes private workers and tracked process groups/
-ordinary descendants; malicious escaped daemon isolation and automatic rollback are not claimed.
-
-Static previews use revocable snapshots on a separate loopback origin in the same process,
-with CSP/iframe script-only sandboxing and no wallet/API routes. That browser restriction
-does not sandbox native commands. Checkpoint writes require a separate reviewed-text approval
-bound to the current memory connection; recall/recheck/reconnection never grants execution or
-provider access. See [builder contracts and limits](API.md#local-builder--apiagentbuilder).
 
 ## External agent bearer keys
 

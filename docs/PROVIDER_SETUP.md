@@ -94,8 +94,7 @@ copies; cleanup is not secure heap erasure.
 
 `AGENT_LLM_EXTRA_HEADERS` accepts only non-secret, bounded attribution or provider organization/
 workspace values. `HTTP-Referer` and `X-Title` apply only to OpenRouter; OpenAI organization/
-project headers only to OpenAI; `anthropic-workspace-id` only to Anthropic. This policy also
-applies in the private builder worker, without forwarding the server environment. Credentials
+project headers only to OpenAI; `anthropic-workspace-id` only to Anthropic. Credentials
 and client-identity overrides are refused. OpenRouter attribution is optional upstream; it
 does not resolve credit limits, account restrictions or every HTTP 403.
 
@@ -164,37 +163,6 @@ that RecallLoop does not reuse provider-stored state; it is not a live routing d
 a claim that the upstream error is fixed. No blind retries, client impersonation, or
 provider-storage workaround was added.
 
-### Model use in the local builder
-
-The [local builder](LOCAL_BUILDER.md) uses the session's explicitly connected base URL,
-protocol, credential, and an advertised model selected in the composer, not saved OpenCode
-logins or operator defaults. The current catalogue is not a guarantee that every listed
-model supports tools; only the checked model/protocol gets a verified indicator.
-Opening a folder or recalling memory does not connect/reconnect a provider. Local model tasks
-use streaming; tool-disabled/known-unsupported profiles answer from supplied prose with no
-tool authority. Local actions require supported enabled tools. Plain-generation verification
-alone is not evidence that this SDK path works with a live account.
-
-Each task starts a private OpenCode V2 worker with fresh SDK history. Follow-ups replay only
-bounded visible page prose (six runs, twelve messages, 24,000 characters), never old file/tool
-logs or approvals; relevant disk files must be read afresh. Its fetch gate admits
-only that active task's selected endpoint/model, with fixed explicit headers and bounded
-bodies, `store: false`, full local function-call/output replay, and no hosted tools or
-provider-stored response/message/reasoning references. Other SDK providers, discovery,
-updates, OAuth, references, warming, title generation, retries, and paid compaction are disabled.
-No other client's identity is forged. Native command environments do not receive model keys.
-
-The coding budget is at most **six requests / 4,096 output tokens per request / five minutes**.
-Token-truncated output cannot automatically issue another paid continuation; unfinished
-budget-limited work reports `budget_exhausted`, not completion. Builder limits are fixed
-application policy; conversation `AGENT_LLM_MAX_OUTPUT_TOKENS` is not inherited into the private
-worker. Only validated, host-scoped non-secret extra headers are handed off. Settings generation/capability checks are separate
-explicit requests and can still consume quota.
-
-The actual SDK paths are validated against scripted loopback Chat/Responses endpoints, not
-live provider acceptance. Inspect partial results before a new smaller task; do not use retries,
-client impersonation, or disabled review gates to bypass an account/model restriction.
-
 ### Sanitized diagnostics
 
 Upstream error bodies are used only to choose a fixed diagnostic; they are never returned or logged.
@@ -239,16 +207,15 @@ Use the official [Walrus Memory dashboard](https://memory.walrus.xyz/dashboard),
 
 RecallLoop checks the official deployment/network, on-chain account type/owner through Tatum, relayer readiness, and signed delegate access. Public relayer health alone is not authorization. Verification and re-verification do not store memories; signed metadata reads may consume delegate budget. Account creation/delegate grants in the external dashboard may involve real transactions and costs, unlike RecallLoop login.
 
-**Auto-memory starts on** in hosted chat and the local builder. After successful completion,
+**Auto-memory starts on** in hosted chat. After successful completion,
 eligible current-user prose is analyzed for durable facts; files, assistant output, history
 and terminal logs are excluded. Obvious code/quotes/filler, recognized-secret lines and explicit
 privacy requests are filtered. The toggle's disable choice survives same-tab/login reloads;
 new logins start on. The parent owns capture, with no model memory-write tool.
 
 Hosted **Turn options → Also save raw chat** separately enables transcript/tool-summary
-records. Disabling Auto-memory or reloading clears raw consent. Local **Use Walrus context**
-remains a separate, default-off profile/facts recall option; **Walrus → New checkpoint** saves
-reviewed text with its own consent. See [capture scope and deduplication](MEMORY_PRIVACY.md#automatic-context-capture).
+records. Disabling Auto-memory or reloading clears raw consent. See
+[capture scope and deduplication](MEMORY_PRIVACY.md#automatic-context-capture).
 
 The relayer processes plaintext for embedding/encryption/storage; Walrus blobs are encrypted.
 Walrus storage and delegate quotas apply. Confirm accepted writes in the separate capture

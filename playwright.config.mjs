@@ -6,7 +6,6 @@ const baseURL = `http://127.0.0.1:${port}`
 export default defineConfig({
   testDir: './browser',
   testMatch: '**/*.pw.mjs',
-  testIgnore: '**/local-builder/**',
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -28,7 +27,6 @@ export default defineConfig({
     url: `${baseURL}/api/health`,
     reuseExistingServer: false,
     timeout: 60_000,
-    env: { HOST: '127.0.0.1', PORT: port, NODE_ENV: 'development', RECALLLOOP_WORKSPACE_TOKEN: '',
-      RECALLLOOP_REQUIRE_WORKSPACE_AUTH: '', RECALLLOOP_ALLOWED_ORIGINS: '', RECALLLOOP_CAPTURE_MODE: 'both', AGENT_LLM_EXTRA_HEADERS: '' },
+    env: { HOST: '127.0.0.1', PORT: port, NODE_ENV: 'development', RECALLLOOP_ALLOWED_ORIGINS: '', RECALLLOOP_CAPTURE_MODE: 'both' },
   },
 })

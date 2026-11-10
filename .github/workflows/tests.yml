@@ -32,17 +32,10 @@ jobs:
       - name: Credential-free two-session recall loop
         run: npm run demo:agent
       - name: Dependency vulnerability audit
-        # Gate on high-or-worse. Remaining moderate npm-tooling advisories
-        # (@npmcli/arborist, glob, minimatch, cacache) propagate from the pinned
-        # @opencode SDK chain with no compatible fix; see docs/VALIDATION.md.
-        run: npm audit --audit-level=high
+        run: npm audit
 
   browser:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        suite: ['workspace', 'local-builder']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,15 +45,11 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Signed synthetic wallet and offline workspace scenarios
-        if: matrix.suite == 'workspace'
         run: npm run test:browser
-      - name: Real local launcher, folder switching and offline SDK scenarios
-        if: matrix.suite == 'local-builder'
-        run: npm run test:browser:builder
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: ${{ matrix.suite }}-browser-failure-report
+          name: browser-failure-report
           path: .playwright/
           include-hidden-files: true
           retention-days: 7

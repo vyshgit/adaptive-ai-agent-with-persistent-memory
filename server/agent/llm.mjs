@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { AppError, clampNumber } from '../safety.mjs'
-import { validateProviderUrl, validateProviderProtocol, LOCAL_OLLAMA_BASE, LOCAL_OLLAMA_ID } from './connections.mjs'
+import { validateProviderUrl, validateProviderProtocol } from './connections.mjs'
 import { parseSse, readLimitedText } from './sse.mjs'
 import { providerFailure, providerErrorStatus, providerNetworkFailure } from './provider-errors.mjs'
 import { rememberToolSignature, copyToolSignature, toolSignatureContent } from './tool-signatures.mjs'
@@ -81,28 +81,6 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
       if (error instanceof AppError) throw error
       throw providerNetworkFailure(deadline, 'models discovery request')
     }
-  }
-
-  async function localModels(signal) {
-    signal?.throwIfAborted()
-    validateProviderUrl(LOCAL_OLLAMA_BASE, env)
-    const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(2500)])
-    try {
-      // Fixed loopback read with no credentials/extra headers, redirects,
-      // downloads or inference. The route separately requires a local launch.
-      const response = await fetchImpl('http://127.0.0.1:11434/api/tags', { signal: deadline, redirect: 'error' })
-      if (!response.ok) { await response.body?.cancel(); return null }
-      const data = JSON.parse(await readLimitedText(response, 512_000))
-      if (!Array.isArray(data?.models)) return null
-      const models = [...new Set(data.models.slice(0, 1000).filter(item => item && !item.remote_model && !item.remote_host
-        && typeof item.size === 'number' && item.size > 0 && /^[a-f\d]{64}$/i.test(item.digest || '')
-        && typeof item.name === 'string' && /^[A-Za-z0-9._:/@+-]{1,128}$/.test(item.name)
-        && !/(?:^|[-/:])cloud(?:$|[-/:])/i.test(item.name)).map(item => item.name))].slice(0, 100)
-      signal?.throwIfAborted()
-      if (!models.length) return null
-      return { id: LOCAL_OLLAMA_ID, name: 'Ollama local', mode: 'live', baseUrl: LOCAL_OLLAMA_BASE, apiKey: '', apiStyle: 'chat',
-        model: models[0], models, catalogue: models.map(id => ({ id, cost: 'local' })), toolsEnabled: true, source: 'local-discovery' }
-    } catch { signal?.throwIfAborted(); return null }
   }
 
   async function* mockCompletion({ messages, memories = [], project, tools = [], signal }) {
@@ -333,7 +311,7 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
     }
     return { verified: true, verification }
   }
-  return { streamCompletion, models, localModels, verify }
+  return { streamCompletion, models, verify }
 }
 
 function parseArguments(value) {

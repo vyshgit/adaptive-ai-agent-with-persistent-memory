@@ -3,7 +3,7 @@ import { getWallets } from '@wallet-standard/app'
 import { isWalletWithRequiredFeatureSet } from '@mysten/wallet-standard'
 import type { WalletWithFeatures, StandardConnectFeature, StandardDisconnectFeature, StandardEventsFeature, SuiSignPersonalMessageFeature, WalletAccount } from '@mysten/wallet-standard'
 import { Layers2, Wallet, ShieldCheck, Sun, Moon, KeyRound, Database, ExternalLink, LoaderCircle } from 'lucide-react'
-import { agentJson, resetSessionSecrets, setSessionTag, setWorkspaceToken } from './api.ts'
+import { agentJson, resetSessionSecrets, setSessionTag } from './api.ts'
 import { redactBrowserText } from './clientSafety.ts'
 import type { WalletSession } from './types.ts'
 import { Button, IconButton, fieldClass } from './ui.tsx'
@@ -34,7 +34,6 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
   const [connected, setConnected] = useState<SigningWallet>()
   const [pending, setPending] = useState('Checking wallet session…')
   const [error, setError] = useState('')
-  const [token, setToken] = useState('')
   const generation = useRef(0)
   const mutation = useRef(false)
   const cache = useRef<WorkspaceCache | null>(null)
@@ -211,7 +210,6 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
       </section>
     </main>
     <footer className="mx-auto w-full max-w-5xl border-t border-secondary px-xl py-xl sm:px-4xl">
-      <details className="mb-lg"><summary className="cursor-pointer rounded-md text-xs text-tertiary focus-visible:ring-2 focus-visible:ring-focus-ring">Operator access token (only if configured)</summary><form className="mt-md flex flex-wrap items-center gap-sm" onSubmit={event => { event.preventDefault(); setWorkspaceToken(token); setToken(''); void refresh() }}><label htmlFor="gate-token" className="sr-only">Optional workspace bearer token</label><input id="gate-token" type="password" autoComplete="off" maxLength={4096} disabled={Boolean(pending)} className={`${fieldClass} min-w-0 flex-1`} value={token} onChange={event => setToken(event.target.value)} /><Button type="submit" disabled={Boolean(pending) || !token}>Unlock</Button></form></details>
       <LegacyCacheCleanup />
       <p className="text-xs leading-relaxed text-tertiary">Use localhost or HTTPS on a server you trust. Wallet login does not encrypt browser caches or grant Walrus access. Memory adaptation is not model retraining. <a className="rounded-md text-secondary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-focus-ring" href="#/console">Legacy operator console</a></p>
     </footer>

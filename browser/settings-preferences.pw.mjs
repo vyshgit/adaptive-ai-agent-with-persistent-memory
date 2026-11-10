@@ -15,7 +15,7 @@ async function setup(page) {
 test('setup variables survive closing Settings and reload, but keys and catalogue eligibility do not', async ({ page }, testInfo) => {
   const checkErrors = failOnPageErrors(page)
   const { fixture, settings } = await setup(page)
-  const keys = ['SYNTHETIC_PREFERENCE_MODEL_KEY', 'SYNTHETIC_PREFERENCE_TATUM_KEY', '4'.repeat(64), 'SYNTHETIC_PREFERENCE_ACCESS_TOKEN']
+  const keys = ['SYNTHETIC_PREFERENCE_MODEL_KEY', 'SYNTHETIC_PREFERENCE_TATUM_KEY', '4'.repeat(64)]
   await settings.getByLabel('Provider', { exact: true }).selectOption('openrouter')
   await settings.getByLabel('Model API key', { exact: true }).fill(keys[0])
   await chooseProviderModel(settings, 'synthetic-discovered-only')
@@ -24,8 +24,6 @@ test('setup variables survive closing Settings and reload, but keys and catalogu
   await section(settings, 'Walrus Memory')
   await settings.getByLabel('Walrus Memory account object ID', { exact: true }).fill(SYNTHETIC_ACCOUNT_ID)
   await settings.getByLabel('Delegate private key', { exact: true }).fill(keys[2])
-  await section(settings, 'Advanced')
-  await settings.getByLabel('Workspace bearer token', { exact: true }).fill(keys[3])
   await settings.getByRole('button', { name: 'Done', exact: true }).click()
   const fresh = await openSettings(page)
   await expect(fresh.getByLabel('Provider', { exact: true })).toHaveValue('openrouter')
@@ -38,8 +36,6 @@ test('setup variables survive closing Settings and reload, but keys and catalogu
   await expect(fresh.getByLabel('Delegate private key', { exact: true })).toHaveValue('')
   await section(fresh, 'Tatum')
   await expect(fresh.getByLabel('Tatum API key', { exact: true })).toHaveValue('')
-  await section(fresh, 'Advanced')
-  await expect(fresh.getByLabel('Workspace bearer token', { exact: true })).toHaveValue('')
   await fresh.getByRole('button', { name: 'Done', exact: true }).click()
   await page.reload()
   const restored = await openSettings(page)

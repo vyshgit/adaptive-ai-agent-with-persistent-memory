@@ -13,23 +13,19 @@ Local validation and release-review status updated **10 November 2026**.
 
 - [x] Memory-first conversation/planning, bounded reviewed coding, and visible recall/capture
   workflow implemented; working plans and draft-only clarification replies are distinct from actions.
-- [x] Credential-free local startup, CLI demo, a complete 357-test run, and build/typecheck
-  validated. All 98 browser scenarios (66 hosted conversation + 32 local-builder) have passing
-  observations across full runs and targeted reruns. Details: [VALIDATION.md](VALIDATION.md).
+- [x] Credential-free local startup, CLI demo, a complete 270-test run, and build/typecheck
+  validated. All 65 Chromium scenarios have passing observations across full runs and
+  targeted reruns. Details: [VALIDATION.md](VALIDATION.md).
 - [x] Per-user account/service isolation, default facts-only Auto-memory with a disable control
   and separate raw consent, revocable tab caches, key-free cross-tool setup, and encrypted
   multi-profile device-vault behavior validated offline.
   Synthetic fixtures are not live account/API/Mainnet or cross-tool compatibility evidence.
-- [x] Integrated selectable-folder builder with Standard/Strict permissions, real disk edits/
-  native commands, read-only Plan, bounded follow-ups, actual private SDK execution, isolated
-  static previews, and opt-in reviewed checkpoints validated offline. Native commands are not
-  sandboxed; scripted model/mock memory is not live evidence.
 - [x] Shared provider gateway, endpoint-bound dispatch authentication/cleanup, text-only tool
   denial, private Gemini signature replay, and retained-context provider recovery validated
   offline. The user's specific Gemini HTTP 400 still needs credential-redacted error details.
-- [ ] **Dependency oversight:** audits now report 26 moderate npm-tooling findings and 0 high
-  (CI gates on high severity after the verified `zod@^4.6.6` override). Monitor the OpenCode
-  SDK chain for compatible updates; do not claim a clean audit.
+- [x] **Dependency oversight:** the resolved dependency tree audits clean — `npm audit` and
+  `npm audit --omit=dev` both report **0 vulnerabilities** after the OpenCode SDK chain was
+  removed with the local builder. CI keeps the plain `npm audit` gate.
 - [ ] **Walrus Memory writing on Mainnet:** verify the user's authorized account/delegate,
   actual completed writes, and independent inventory. Health/config responses are not proof.
 - [ ] **At least 10 Mainnet memories:** bundled guarded seed targets 12 unique confirmed
@@ -97,12 +93,8 @@ not substitute a mock count or fabricated blob for a slow live write. Use the wa
 workspace Memory panel, not the legacy console's illustrative records, to demonstrate
 Mainnet inventory.
 
-If showing the local builder instead of conversation-only proposals, launch it explicitly
-from a trusted project folder. Show routine actions, an exact higher-risk disk/command review
-(or Strict review for every write/command), actual results, static preview, and a separately
-approved checkpoint. Show automatic user-context capture and its confirmed status too.
 Walrus carries extracted/reviewed context, not source restoration
-or execution approvals. Do not expose this local mode through a hosted demo/reverse proxy.
+or execution approvals.
 
 ## Presentation and scoring
 
@@ -122,16 +114,14 @@ Sharing on X/LinkedIn is a bonus; do not treat it as a replacement for required 
   inspect provider/vault captures and the refreshed short-height Auto-memory layout.
 - [x] Inspect fresh folder-picker 320/390/1440-pixel captures, real SDK provider recovery with
   retained drafts, HF/Gemini/OpenRouter error help, and responsive onboarding/Settings/Files.
-- [x] Run `npm test -- --test-concurrency=1`, `npm run typecheck`, `npm run build`, both browser
-  suites, launcher help, CLI demo/retrieval and a fresh bounded full audit. The initial unit
-  timeouts passed unchanged in the complete bounded rerun. Both hosted browser failures and
-  the builder renderer-crash case passed targeted reruns; Stop now uses a deterministic
+- [x] Run `npm test -- --test-concurrency=1`, `npm run typecheck`, `npm run build`, the browser
+  suite, launcher help, CLI demo/retrieval and a fresh bounded full audit. The initial unit
+  timeouts passed unchanged in the complete bounded rerun. Hosted browser failures passed
+  targeted reruns; Stop now uses a deterministic
   generator gate and verifies actual abort/capture behavior. Full and rerun artifacts are
-  retained separately. The production-only audit result is from the earlier 10 November run
-  against the same lockfile. Both audits fail and remain an unchecked release gate above:
-  [VALIDATION.md](VALIDATION.md). Repeat affected checks if code changes before release.
-- [x] Add separate hosted-workspace/local-builder browser CI matrix jobs and bounded unit-test
-  concurrency; validate YAML, matrix conditions, script references and failure artifacts locally.
+  retained separately. Repeat affected checks if code changes before release.
+- [x] Single browser CI job and bounded unit-test concurrency; validate YAML, script
+  references and failure artifacts locally.
 - [ ] Resolve the dependency gate and execute current hosted CI before claiming green hosted
   validation for this follow-up.
 - [ ] Verify hosted CI, public branch/default-branch contents, npm startup, and demo links.

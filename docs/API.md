@@ -8,10 +8,6 @@ Three independent surfaces share one Express process:
 | `/api/memory/*` | External agent/admin bearer keys; operator environment memory configuration. |
 | `/api/walrus/*` | Preserved legacy publisher/index API; not the wallet memory backend. |
 
-The explicitly launched local builder lives under `/api/agent/builder/*` and uses the same
-signed-session boundary, with additional workspace/action approvals. It is not a remotely
-enabled execution surface; see [the local-builder contract](#local-builder--apiagentbuilder).
-
 See [authentication](AUTHENTICATION.md) before exposing any route remotely. Examples are
 request contracts, **not live storage evidence**. JSON bodies are limited to 1 MB on the
 workspace/new-memory routers; the legacy parser remains 32 KB. Compressed workspace bodies
@@ -19,8 +15,7 @@ are rejected. `GET /api/health` reports process health, not provider readiness.
 
 ## Wallet workspace — `/api/agent`
 
-All requests pass the origin/operator-token policy. An operator bearer token does not
-replace wallet login. After login/demo, obtain `sessionTag` from `/auth/session` and send
+All requests pass the origin policy. After login/demo, obtain `sessionTag` from `/auth/session` and send
 **`X-RecallLoop-Session: <sessionTag>`** with the session cookie on protected and
 session-changing requests. A stale tag returns `409 session_changed`; reload identity
 before sending conversation/project data. The UI handles binding automatically.
@@ -50,7 +45,6 @@ choose `agentId`; the server derives it from the signed wallet or demo identity.
 | GET | `/status` | Identity/auth, default public `llm`, all public `modelConnections`, memory health, Tatum/delegate verification, coding limits. |
 | GET | `/models?connectionId=…` | Array of `{ id, label, cost? }` from the selected profile's bounded model list. |
 | POST | `/models/discover` | `{ baseUrl, apiKey, apiStyle? }`; bounded preconnection catalogue read, returning `{ baseUrl, models, discovered }`. No model ID, generation, or credential installation. |
-| POST | `/models/local` | `{}`; signed-in local launch only. Reads fixed loopback Ollama tags and installs/refreshes the `local-ollama` profile for installed key-free models; returns `{ available, connection }`. No URL/key/model overrides, downloads, or generation. |
 | POST | `/connect` | Model connection below; returns key-free `connection`. |
 | POST | `/verify` | `{ connectionId?, checkCapabilities?: false, toolsEnabled?: true }`; recheck the selected saved live model credential. |
 | POST | `/disconnect` | `{ connectionId? }`; remove only that profile, without owner-key fallback. |
@@ -81,7 +75,7 @@ Live model connection:
 Optional `profileId` identifies the profile to add/replace; omission creates a new ID.
 `profileName` is a bounded public label, never a place for a secret. Up to 12 profiles are
 allowed. Public connections include their ID/name and never keys. `/models`, `/verify`,
-`/disconnect`, `/chat`, and builder `/prompt` accept **`connectionId`**; it is mandatory when
+`/disconnect` and `/chat` accept **`connectionId`**; it is mandatory when
 multiple profiles are connected. Omission then fails `connection_required`, and a missing
 profile fails `connection_not_found`, rather than routing by a potentially duplicate model ID.
 
@@ -219,8 +213,7 @@ accounts. See [portability](MEMORY_PORTABILITY.md) and [privacy](MEMORY_PRIVACY.
   inside the server budget; it does not truncate the displayed answer.
 - Optional `project`: at most 64 safe relative text files, 20,000 characters each / 160,000
   total. Only selected files are sent by the UI. No server filesystem path, persistent
-  upload, shell execution, or automatic project export occurs through `/chat`. Real disk
-  work belongs to the separately enabled local-builder routes below.
+  upload, shell execution, or automatic project export occurs through `/chat`.
 - After successful completion, automatic facts analyze only eligible current-user prose,
   bounded to 4,000 characters plus an optional project label. Files, prior history, assistant
   claims and tool output are excluded. Obvious filler/code/logs/quotes, transcript dumps,
@@ -310,9 +303,8 @@ still extract the actual user statement; raw assistant clarification/tool summar
 only with separate raw consent. Suggested replies are never captured as though the user had
 selected them. With tools disabled, the model can ask or plan in text.
 
-These `/chat` tools use the existing bounded browser-project engine, not the OpenCode SDK.
-They add no shell, web search, travel service, booking, publication, messaging, or transaction
-execution. The local builder uses a separate private SDK worker and parent risk/approval policy.
+These `/chat` tools use the existing bounded browser-project engine. They add no shell,
+web search, travel service, booking, publication, messaging, or transaction execution.
 
 Limits: 3 tool rounds, 4 calls per round, 6 proposals / 64,000 proposed characters, and
 40,000 cumulative tool-result characters. Each tool has a 15-second turn deadline;
@@ -322,174 +314,6 @@ Workspace: 48 protected requests globally, 8 per session, 4 chats globally, and 
 mutating connection/memory-route operation per session. Up to 8 mutating route operations
 run globally. Pending SDK writes: 8 globally / 2 per memory service, including after
 disposal. These are not distributed scheduling or complete production abuse controls.
-
-## Local builder — `/api/agent/builder`
-
-Invoke `node /path/to/recallloop/scripts/local-builder.mjs` from the desired project, or use
-`npm --prefix /path/to/recallloop run builder` there. The invocation folder (including npm's
-`INIT_CWD`) is the default; `--workspace /absolute/project` overrides it. This supplies
-`--local --workspace` to the server. The authenticated, explicit `/open` operation can select
-another existing local project while idle. Hosted/ordinary startup returns `enabled: false` from `/builder/status` and
-refuses execution routes with `403 builder_disabled`. Local mode also guards the **whole
-app/Vite** against remote peers, foreign origins, rebinding Hosts, and forwarded-origin access.
-Wallet login, a workspace token, or recalled memory never enables local execution.
-
-All routes below use the wallet/demo cookie and `X-RecallLoop-Session`. Except `/status`,
-`/folders` and legacy initial `/open`, they require the current `workspaceId`; an explicit
-directory selection requires the observed ID or `null` when closed. Absolute paths are
-accepted only for folder navigation and explicit opening, never as a tool scope override.
-Unknown body/query fields are rejected: callers cannot supply identity, environment, provider
-credentials, arbitrary grants, or SDK transcripts. Responses are `no-store`.
-
-| Method | Builder path | Body / result |
-| --- | --- | --- |
-| GET | `/status` | `enabled`, `opened`, selected `root`/`name`, fixed `launchRoot`, `workspaceId`, `memoryEpoch`, `permissionMode`, current task, pending approvals, limits, and notices. No engine is started. |
-| POST | `/folders` | `{ directory?: "/absolute/path" }`; idle-only bounded folder listing with `path`, `parent`, `home`, `launch`, `entries`, `truncated`, `selectable`, `issue`. No file contents or workspace grant. |
-| POST | `/open` | `{ confirm: "open-local-folder", permissionMode: "standard" \| "strict", directory?: "/absolute/project", workspaceId?: "observed-id" \| null }`; validate then open/switch this login's project while idle. Directory selections compare the observed workspace ID; omitted directory reopens the login's last selection or launch root. The UI defaults to Standard; omitted mode retains Strict for legacy callers. No model/command/memory work. |
-| POST | `/close` | `{ "workspaceId": "…" }`; revoke workspace/approvals/preview and await task cleanup. Approved disk edits remain. |
-| POST | `/permissions` | `{ workspaceId, permissionMode: "standard" \| "strict" }`; idle-only policy change, revoking pending file/command approvals. Checkpoint consent stays separate. |
-| GET | `/files?workspaceId=…&path=.` | Bounded listing: `path`, `entries`, `scanned`, `truncated`. |
-| GET | `/file?workspaceId=…&path=src/example.ts` | Safe UTF-8 `content`, SHA-256 byte `version`, `bytes`, `redacted`. Redacted files are read-only. |
-| POST | `/search` | `{ workspaceId, path?, query?, name? }`; literal case-insensitive content/filename fragments, at least one nonempty; bounded `matches`, `filesScanned`, `bytesRead`, `truncated`. |
-| POST | `/write` | `{ workspaceId, path, content, version, reason? }`; exact-preimage action under the chosen policy. Routine Standard edits stream execution; risky/Strict work returns an immutable review without executing. |
-| POST | `/command` | `{ workspaceId, command, cwd?, timeoutMs?, reason? }`; Standard inspection streams execution; other commands return an exact review. No engine starts just to return a review. |
-| POST | `/reviews/file` | `{ workspaceId, path, content, version, reason? }`; immutable creation/update/deletion approval. `version: null` only for creation; `content: null` deletes. Empty text is a valid file. |
-| POST | `/reviews/command` | `{ workspaceId, command, cwd?, timeoutMs?, reason? }`; review a non-interactive native command and revalidated relative cwd. Default cwd `.`, timeout 60,000 ms. |
-| POST | `/approvals` | `{ workspaceId, id, digest, decision: "approve" \| "reject" }`; consume exactly that immutable, current, unexpired action once. Never submit replacement contents or command. |
-| POST | `/prompt` | `{ workspaceId, text, mode?: "build" \| "plan", connectionId?, model?, history?, useMemory?: false, capture?: true, selectedPath?, recallId?, memoryIds? }`; one task using the selected provider profile, advertised model, bounded prose, opt-in recall, default automatic facts and parent-enforced tools. |
-| POST | `/stop` | `{ workspaceId, taskId }`; task-scoped cancellation and awaited private-worker/process-group cleanup. No success/rollback is implied. |
-| POST | `/recall` | `{ workspaceId, query, includeRaw?: false }`; current-wallet reviewed-context candidates, `recallId`, `expiresAt`, `memories`, `unavailable`, warning. Raw recall needs explicit consent. |
-| POST | `/reviews/checkpoint` | `{ workspaceId, project, revision?, preferences?, decisions?, nextSteps? }`; assemble reviewed text and mint a separate memory approval. Nothing is saved yet. |
-| POST | `/preview` | `{ workspaceId, path?: ".", entry?: "index.html" }`; bounded static snapshot capability, URL, expiry, file/byte counts, warning. UI defaults to `dist`. |
-| POST | `/preview/close` | `{ workspaceId }`; cancel an in-flight snapshot and revoke the current preview capability. |
-
-Folder replacement validates the destination before retiring the current workspace. Success
-revokes old approvals, recall and preview capabilities and creates a new workspace ID; every
-file/command/preview action resolves against that selected root. Invalid destinations and stale
-IDs preserve the current workspace. A selected root lasts for the login, not across new logins.
-The UI reconciles interrupted acknowledgements and confirms draft discard before a switch.
-
-Builder file/command/checkpoint reviews return `{ approval }`. Approval fields include
-`id`, `digest`, `workspaceId`, `kind` (`file`, `command`, or `memory`), `source` (`manual`
-or `agent`), `expiresAt`, and the immutable reviewed details. A new login/folder cannot use
-old tickets. File execution rechecks its exact preimage and path; even a failed or rejected
-consumed ticket cannot be reused. Command approval includes the whole command, cwd, and timeout.
-
-Standard allows scoped routine text creates/updates and a deliberately small inspection grammar:
-`pwd`, `node --version`, supported Git status/log metadata, diff metadata, and full diffs scoped
-to supported files. Git commands are canonicalized to disable hooks, external diff/textconv,
-signatures and pagers. Shell syntax, arbitrary flags, installs, project scripts and unknown
-commands ask, as do deletions and execution/dependency/automation configuration. Strict asks
-for every write and command. Plan denies mutations and noninspection commands before creating
-an approval, in both modes; the worker also omits its mutation tool. This is not sandboxing.
-
-**Agent approval is an acknowledgement, not execution confirmation.** Its `/approvals`
-response is JSON `{ success: true, accepted: true, approved, pendingExecution }`; approved
-execution proceeds on the original `/prompt` SSE stream. Manual approval execution streams
-its actual result on `/approvals`. Rejecting a manual action returns JSON without execution.
-
-### Builder task events
-
-The POST streams use the same blank-line SSE framing/heartbeat/no-transform conventions
-as chat, but a different event contract:
-
-| Event | Data / meaning |
-| --- | --- |
-| `task_started` | `{ taskId, workspaceId, kind, mode?, model?, connectionId?, historyMessages?, permissionMode? }`; current task authority, not completion. |
-| `tool` | `{ id, name, path?, command? }`; one supplied bounded tool was requested, not completed. |
-| `tool_waiting` | `{ id, name, reason }`; the requested action paused for exact permission. |
-| `tool_result` | `{ id, name, status, summary, output?, exitCode?, commandStatus?, code? }`; confirmed tool outcome, rejection or error; output excerpts are bounded. |
-| `approval` | Immutable approval details; wait for a real human decision. No model approval API exists. |
-| `memory_started` | `{ includeRaw: false }`; the task's explicitly opted-in profile/facts recall started. |
-| `memory` | `{ memories, unavailable, includeRaw: false }`; scoped recalled context, never permission or a write. |
-| `delta` | `{ text }`; redacted partial model text, retained if later work fails. |
-| `file_applied` | `{ path, version, deleted, operation, approvalId?, automatic? }`; exact-preimage disk change confirmed, not tested. `approvalId` identifies its own review without closing a newer dialog. |
-| `terminal_started` | `{ command, cwd, timeoutMs }`; a parent-admitted real native command started. |
-| `terminal_output` | `{ text }`; bounded, stream-redacted output. |
-| `terminal_done` | `{ status, exitCode }`; actual process outcome, including nonzero/timeout/stopped states. Not a passed-test declaration. |
-| `terminal_failed` | `{ code, message }`; failed command/output handling, not success. |
-| `done` | Coding: `{ answer, finishReason, requests, mode, model, taskId, workspaceId }`. Automatic action: `{ success, automatic: true, result, taskId }`. Manual approval: `{ success, approved, result, taskId }`. Task/generation completion is neither test success nor memory confirmation. |
-| `stored` | Coding-only capture result after `done`, using the chat `stored` schema. Disabled/no-context captures report zero writes and `skipped`; unavailable/failed/pending results stay separate from task completion. |
-| `error` | `{ code, message, retryable }`; terminal failure; no later `done` for that failed task. |
-
-The SDK worker is fresh per coding/command task, with a fresh SDK session per prompt, private
-HOME/XDG directories, in-memory database, and nonpersisted events. Its SDK Location is an
-empty scratch folder. Only `list_files`, `read_file`, `search_files`, `propose_file`, and
-`run_command` are exposed. Inherited configuration/plugins/credentials/MCP/skills/references
-and native model tools are disabled. The parent owns file scope, risk policy and approvals; wallet,
-Tatum, delegate, cookie, and approval capabilities are not passed to the SDK.
-
-`text` is bounded to 8,000 characters. `selectedPath` labels the selected disk file; the unsaved
-editor draft is not submitted. `history` permits only user/assistant prose: twelve messages,
-8,000 characters each, 24,000 total; the client supplies up to six recent runs, including an
-uncertainty warning for failed/stopped work. No system/tool roles, snapshots, approvals or
-provider-stored references are replayed. `model` must be advertised by the current connection;
-the endpoint, protocol and credential come only from that connection. The worker admits bounded
-streamed requests to that endpoint/model, with `store: false`, full local function/results,
-no provider-stored references, no hosted tools, and no retry or paid compaction. Settings
-verification is a separate explicit request path and may consume provider quota.
-
-Discovery, hosted generation and SDK execution share provider-specific dispatch authentication
-and payload normalization. Credentials are absent from admitted request descriptors and SDK
-registry configuration; fresh authenticated headers exist only around dispatch. Text-only
-profiles omit tool definitions, directives and tool history, with both worker and parent denying
-execution. Capability policy uses explicit disablement, exact-model/protocol verification, then
-OpenRouter catalogue metadata, never a model-name guess. Gemini thought signatures remain
-private to the active tool exchange and never enter browser events/history/memory.
-
-Keep reading after coding `done` for `stored`. Confirmation waits at most ten seconds; a
-pending result or interrupted stream may still have accepted work completing remotely. The
-client preserves task completion if capture confirmation is delayed/interrupted, including
-after Stop. Disposal prevents late metadata publication but cannot undo accepted remote writes.
-
-### Builder memory and limits
-
-Builder tasks default to **automatic facts capture** after a nonempty, successfully completed
-answer. `capture: false` opts out; nonboolean values are rejected, and raw capture fields are
-not accepted. Analysis uses only eligible current-user task prose plus the selected folder's
-basename, never its absolute path, selected file contents, SDK answer, history or terminal data.
-It uses the same filters, UTC-day deduplication, lifecycle and write limits as chat. Failed,
-stopped or incomplete tasks do not initiate capture. The model has no memory-write tool.
-
-Recall remains default-off and independent of capture.
-`useMemory: true` explicitly opts a task into profile/facts recall with the current wallet,
-at most eight hits / 1,200 tokens, never raw history or a checkpoint write. `/recall` returns
-at most eight hits with a 1,200-token retrieval budget. `/prompt` can attach only explicitly
-selected blob IDs from its current five-minute recall; attached text is capped at 6,000
-characters. An expired/foreign recall fails rather than silently dropping selected context.
-Memory-service replacement/recheck cancels recall and checkpoint tickets; `memoryEpoch`
-also detects changes when public account/mode fields are unchanged.
-
-Checkpoint fields: project label 120 characters, revision/reference 200, preferences 3,000,
-decisions/outcome 5,000, next steps 3,000; at least one reviewed section must be nonempty.
-Revision text is user supplied, not independent revision evidence. A separately approved
-checkpoint is saved as `facts` in the current wallet's existing namespace, only after
-completed-blob confirmation. It is reviewed context, not a source/terminal/credential backup,
-provider reconnection grant, command approval, or full workspace restore.
-
-Default budgets: 5 minutes per task; 6 model requests / 4,096 output tokens per request;
-32 tool calls; 100,000-byte editable files; 500 returned / 3,000 scanned listing entries;
-500 search files / 2,000,000 bytes / 100 matches; 1–120-second commands with 256,000 output
-bytes; 8 pending five-minute approvals; 2,000,000 combined task-event bytes; four opened
-workspaces and two tasks/commands globally, with one active task per login.
-
-Token truncation and a capped unfinished tool loop report `budget_exhausted`, never completion.
-In particular, a token-truncated answer cannot trigger an automatic extra paid request.
-`approval_invalid`, `file_changed`, `workspace_changed`, `recall_expired`, `engine_stopped`,
-and output/time limits require inspection or a fresh explicit task/review, not an automatic retry.
-
-**Native commands have OS/network authority, not sandboxing.** No RecallLoop credentials
-are supplied in their environment, but commands/project scripts can access other disk files,
-credentials, networks, and resources with the user's OS permissions. Stop/logout closes
-workers and tracked process groups/ordinary descendants; malicious daemon isolation is not
-claimed. Already-approved disk edits and accepted remote writes cannot be undone by logout.
-
-Static previews use a separate loopback origin in the same process, not a running backend.
-Only pre-read HTML/CSS/JS/MJS/JSON/TXT/SVG are served: 200 assets, 1,000,000 bytes each /
-5,000,000 total, ten-minute expiry. CSP/iframe sandbox permits scripts but not same-origin
-privilege or API fetches/external assets. Relative build URLs are required. Preview replacement,
-closure, folder closure, logout, and expiry revoke capabilities. This is not an OS or general
-network sandbox. See [the complete builder guide](LOCAL_BUILDER.md).
 
 ## External memory API — `/api/memory`
 

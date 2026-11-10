@@ -1,17 +1,14 @@
 import { clearBrowserSecrets, redactBrowserText, registerBrowserSecret } from './clientSafety.ts'
 
-// Session/operator auth stays in memory. Plaintext credentials never belong in
+// Session auth stays in memory. Plaintext credentials never belong in
 // chat/project caches; the optional encrypted device vault is a separate surface.
-let workspaceToken = ''
 let sessionTag = ''
-export function setWorkspaceToken(token: string) { workspaceToken = token.trim(); registerBrowserSecret(workspaceToken) }
 export function setSessionTag(tag: string | null) { sessionTag = tag || '' }
-export function resetSessionSecrets() { clearBrowserSecrets(); registerBrowserSecret(workspaceToken) }
+export function resetSessionSecrets() { clearBrowserSecrets() }
 
 export function agentFetch(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
   if (init.body) headers.set('Content-Type', 'application/json')
-  if (workspaceToken) headers.set('Authorization', `Bearer ${workspaceToken}`)
   if (sessionTag) headers.set('X-RecallLoop-Session', sessionTag)
   return fetch(`/api/agent${path}`, { ...init, headers, credentials: 'same-origin', cache: 'no-store' })
 }

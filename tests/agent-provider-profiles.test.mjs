@@ -1,10 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createConnectionStore, validateConnection, validateModelDiscovery, publicConnection, LOCAL_OLLAMA_BASE, LOCAL_OLLAMA_ID, MAX_MODEL_CONNECTIONS } from '../server/agent/connections.mjs'
+import { createConnectionStore, validateConnection, validateModelDiscovery, publicConnection, MAX_MODEL_CONNECTIONS } from '../server/agent/connections.mjs'
 import { createLlm } from '../server/agent/llm.mjs'
 import { AppError } from '../server/safety.mjs'
 import { workspaceHttp, deferred } from './helpers/workspace-http.mjs'
-import { temporaryProject } from './helpers/builder-fixture.mjs'
 import { parseSse } from '../server/agent/sse.mjs'
 
 const profile = (profileId, apiKey = `SYNTHETIC_PROFILE_KEY_${profileId}`) => ({ profileId, profileName: `Account ${profileId}`,
@@ -12,17 +11,14 @@ const profile = (profileId, apiKey = `SYNTHETIC_PROFILE_KEY_${profileId}`) => ({
 const verified = config => ({ verified: true, verification: { model: config.model, apiStyle: config.apiStyle, generation: 'verified', streaming: 'not_checked', tools: 'not_checked' } })
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 
-test('multiple connected profiles route duplicate model IDs by identity in both chat and local coding', async t => {
-  const calls = [], staged = [], directory = await temporaryProject(t)
+test('multiple connected profiles route duplicate model IDs by identity across browser clients', async t => {
+  const calls = [], staged = []
   let fail = false
   const f = await workspaceHttp(t, { llm: {
     async models(config) { staged.push(config); return { models: [config.model, 'other-model'], discovered: true } },
     async verify(config) { if (fail) throw new AppError('provider_unauthorized', 'Synthetic rejected credential', 401); return verified(config) },
     async *streamCompletion({ config }) { calls.push({ source: 'chat', id: config.id, apiKey: config.apiKey }); yield { type: 'delta', text: `Using ${config.id}` }; yield { type: 'finish', reason: 'stop' } },
-  }, builder: { directory, engineFactory: async () => ({
-    async prompt({ config }) { calls.push({ source: 'builder', apiKey: config.apiKey }); return { answer: 'Completed coding fixture.', finishReason: 'stop', requests: 1 } },
-    async close() {},
-  }) } })
+  } })
   const browser = f.client(), other = f.client()
   await browser.login(); await other.login()
   for (const id of ['first', 'second']) assert.equal((await browser.json('/connect', { body: profile(id) })).status, 200)
@@ -40,14 +36,8 @@ test('multiple connected profiles route duplicate model IDs by identity in both 
     assert.equal(result.data.answer, `Using ${connectionId}`)
   }
   assert.equal((await other.json('/chat', { body: { ...task, connectionId: 'first' } })).data.code, 'connection_not_found')
-  const workspaceId = (await browser.json('/builder/open', { body: { confirm: 'open-local-folder' } })).data.workspaceId
-  const local = { workspaceId, text: 'Inspect this project.', capture: false, model: 'shared-model' }
-  assert.equal((await browser.json('/builder/prompt', { body: local })).data.code, 'connection_required')
-  const response = await browser.request('/builder/prompt', { body: { ...local, connectionId: 'first' } })
-  const frames = []
-  for await (const frame of parseSse(response.body)) frames.push(frame.event)
-  assert.deepEqual(frames.slice(-2), ['done', 'stored'])
-  assert.deepEqual(calls.map(call => call.apiKey), [profile('first').apiKey, profile('second').apiKey, profile('first').apiKey])
+  assert.deepEqual(calls.map(call => call.apiKey), [profile('first').apiKey, profile('second').apiKey])
+  assert.ok(calls.every(call => call.source === 'chat'))
   fail = true
   assert.equal((await browser.json('/connect', { body: profile('first', 'SYNTHETIC_REJECTED_NEW_KEY') })).status, 401)
   assert.equal(references[0].apiKey, profile('first').apiKey)
@@ -146,50 +136,6 @@ test('Hugging Face HTTP and streamed quota failures explain billing without retr
   assert.equal(requests.filter(url => url.endsWith('/chat/completions')).length, 2)
   assert.equal(JSON.stringify(failed.data).includes(config.apiKey), false)
   assert.equal(JSON.stringify(failed.data).includes('UPSTREAM_PRIVATE_DETAIL'), false)
-})
-
-test('local discovery reads only fixed loopback installed models without headers, generation or downloads', async () => {
-  const local = { name: 'installed-model:latest', size: 1000, digest: 'a'.repeat(64) }, calls = []
-  const llm = createLlm({ env: { AGENT_LLM_EXTRA_HEADERS: '{"Authorization":"OWNER_SECRET_MUST_NOT_APPLY"}' }, fetchImpl: async (url, options) => {
-    calls.push(url)
-    assert.equal(options.headers, undefined)
-    assert.equal(options.method, undefined)
-    assert.equal(options.redirect, 'error')
-    return json({ models: [local, local, { ...local, name: 'remote-model', remote_model: 'managed' }, { ...local, name: 'remote-host', remote_host: 'https://example.com' },
-      { ...local, name: 'model:cloud' }, { ...local, name: 'empty-model', size: 0 }, { ...local, name: 'not-installed', digest: '' }, { ...local, name: 'bad model' }] })
-  } })
-  const result = publicConnection(await llm.localModels())
-  assert.deepEqual(calls, ['http://127.0.0.1:11434/api/tags'])
-  assert.equal(result.id, LOCAL_OLLAMA_ID)
-  assert.equal(result.baseUrl, LOCAL_OLLAMA_BASE)
-  assert.deepEqual(result.models, [{ id: local.name, label: local.name, cost: 'local' }])
-  assert.equal(result.verified, false)
-  const absent = createLlm({ env: {}, fetchImpl: async () => { throw new Error('ECONNREFUSED') } })
-  assert.equal(await absent.localModels(), null)
-})
-
-test('local discovery requires a signed local launch, rejects caller destinations and preserves other profiles', async t => {
-  let calls = 0, available = true
-  const llm = { async localModels() { calls++; return available ? { id: LOCAL_OLLAMA_ID, name: 'Ollama local', baseUrl: LOCAL_OLLAMA_BASE, mode: 'live', apiKey: '',
-    apiStyle: 'chat', model: 'local-model', models: ['local-model'], toolsEnabled: true, source: 'local-discovery' } : null },
-    async models(config) { return { models: [config.model] } }, async verify(config) { return verified(config) } }
-  const hosted = await workspaceHttp(t, { llm }), remote = hosted.client()
-  await remote.login()
-  assert.equal((await remote.json('/models/local', { body: {} })).status, 403)
-  const directory = await temporaryProject(t), f = await workspaceHttp(t, { llm, builder: { directory } }), browser = f.client()
-  assert.equal((await browser.json('/models/local', { body: {} })).status, 401)
-  await browser.demo()
-  assert.equal((await browser.json('/models/local', { body: {} })).status, 403)
-  await browser.json('/auth/logout', { body: {} }); await browser.login()
-  for (const body of [{ url: 'http://evil.example' }, { apiKey: 'never-send-this' }, { agentId: 'other' }]) assert.equal((await browser.json('/models/local', { body })).status, 400)
-  assert.equal(calls, 0)
-  await browser.json('/connect', { body: profile('remote') })
-  assert.equal((await browser.json('/models/local', { body: {} })).data.available, true)
-  assert.equal((await browser.json('/status')).data.llm.id, 'remote')
-  assert.equal((await browser.json('/status')).data.modelConnections.length, 2)
-  available = false
-  assert.equal((await browser.json('/models/local', { body: {} })).data.available, false)
-  assert.deepEqual((await browser.json('/status')).data.modelConnections.map(connection => connection.id), ['remote'])
 })
 
 test('logout during an additional provider verification clears staged and all installed profile credentials', async t => {

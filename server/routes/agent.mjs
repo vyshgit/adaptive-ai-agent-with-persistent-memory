@@ -1,12 +1,11 @@
 import { Router } from 'express'
 import { once } from 'node:events'
 import { AppError, asyncRoute, publicError, redactValue } from '../safety.mjs'
-import { validateConnection, validateModelDiscovery, publicConnection, publicModels, LOCAL_OLLAMA_ID } from '../agent/connections.mjs'
+import { validateConnection, validateModelDiscovery, publicConnection, publicModels } from '../agent/connections.mjs'
 import { validateChat, runChat } from '../agent/chat.mjs'
 import { createMemoryHandoff } from '../agent/memory-handoff.mjs'
-import { createBuilderRouter } from './builder.mjs'
 
-export function createAgentRouter({ llm, connections, wallets, services, builder = null, env = process.env }) {
+export function createAgentRouter({ llm, connections, wallets, services, env = process.env }) {
   const router = Router()
   let active = 0
   let operations = 0
@@ -19,7 +18,6 @@ export function createAgentRouter({ llm, connections, wallets, services, builder
   router.post('/auth/logout', asyncRoute(async (req, res) => {
     const session = req.workspaceSession
     const result = wallets.logout(req, res)
-    await session?.builderDisposal
     res.json(result)
   }))
   router.use(wallets.requireSession, connections.middleware, (req, res, next) => {
@@ -41,21 +39,18 @@ export function createAgentRouter({ llm, connections, wallets, services, builder
     if (session.active || session.changing || operations >= 8) throw new AppError('busy', 'Finish or stop the current operation before changing connections or writing memories.', 429, true)
     session.changing = true
     operations++
-    const previousMemory = session.memory
     let result
     try {
       result = await task(session, req.workspaceController.signal)
       wallets.assertActive(session)
       req.workspaceController.signal.throwIfAborted()
       const value = result?.commit ? result.commit() : result
-      if (previousMemory !== session.memory) builder?.memoryChanged(session)
       return value
     } catch (error) {
       if (session.disposed) wallets.assertActive(session)
       throw error
     } finally { result?.cleanup?.(); session.changing = false; operations-- }
   }
-  router.use('/builder', createBuilderRouter({ builder, wallets, services, connections }))
   router.get('/status', asyncRoute(async (req, res) => {
     const session = req.workspaceSession
     const memory = await session.memory.status()
@@ -63,9 +58,8 @@ export function createAgentRouter({ llm, connections, wallets, services, builder
     req.workspaceController.signal.throwIfAborted()
     res.json({ agentId: session.agentId, auth: wallets.publicSession(session), llm: publicConnection(req.llmConfig), modelConnections: connections.list(req),
       memory, memoryConnection: session.memoryConnection || null,
-      tatum: session.tatum, coding: { maxToolRounds: builder?.enabled ? 6 : 3, reviewRequired: !builder?.enabled,
-        permissionPolicy: builder?.enabled ? 'risk-based-with-optional-strict-review' : 'browser-proposals-only',
-        terminal: Boolean(builder?.enabled), localBuilder: Boolean(builder?.enabled) } })
+      tatum: session.tatum, coding: { maxToolRounds: 3, reviewRequired: true,
+        permissionPolicy: 'browser-proposals-only' } })
   }))
   router.get('/models', asyncRoute(async (req, res) => res.json(publicConnection(connections.select(req, req.query.connectionId)).models)))
   router.post('/models/discover', asyncRoute(async (req, res) => {
@@ -80,23 +74,6 @@ export function createAgentRouter({ llm, connections, wallets, services, builder
       } finally { config.apiKey = '' }
     })
     res.json(discovered)
-  }))
-  router.post('/models/local', asyncRoute(async (req, res) => {
-    const result = await operation(req, async (session, signal) => {
-      if (!builder?.enabled || session.kind !== 'wallet') throw new AppError('local_models_disabled', 'Local model discovery is available only in a signed-in local launch, never in a hosted preview or offline demo.', 403)
-      if (!req.body || Array.isArray(req.body) || Object.keys(req.body).length) throw new AppError('invalid_request', 'Local discovery accepts no URLs, credentials, model IDs or scope overrides.')
-      // A fixed loopback catalogue read, not inference, a download or cloud login.
-      const current = session.modelConnections?.get(LOCAL_OLLAMA_ID)
-      const config = await llm.localModels?.(signal)
-      if (!config) return { commit: () => {
-        if (current) connections.disconnect(req, LOCAL_OLLAMA_ID)
-        return { success: true, available: false, connection: null }
-      } }
-      if (current) config.model = config.models.includes(current.model) ? current.model : config.model
-      connections.admit(req, config)
-      return { commit: () => ({ success: true, available: true, connection: connections.connect(req, config, { select: false }) }) }
-    })
-    res.json(result)
   }))
   router.post('/connect', asyncRoute(async (req, res) => {
     const connection = await operation(req, async session => {

@@ -39,11 +39,6 @@ export function createWalletAuth({ env = process.env, clock = () => Date.now(), 
   function dispose(session) {
     if (!session || session.disposed) return
     session.disposed = true
-    if (session.builder) {
-      session.builderDisposal = Promise.resolve(session.builder.dispose()).catch(() => {})
-      disposals.add(session.builderDisposal)
-      void session.builderDisposal.finally(() => disposals.delete(session.builderDisposal))
-    }
     for (const controller of session.controllers) controller.abort(new DOMException('Wallet session ended', 'AbortError'))
     session.controllers.clear()
     session.memory?.destroy?.()

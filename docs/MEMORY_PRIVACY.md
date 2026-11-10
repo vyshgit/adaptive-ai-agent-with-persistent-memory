@@ -33,14 +33,13 @@ distinct principals. Use dedicated revocable delegates for trusted tools and nev
   such as “don't remember this” or “off the record” skips the whole automatic capture.
   These are heuristic filters; extraction and redaction can still miss or misinterpret text.
 - Analysis is bounded to 4,000 characters of eligible prose, plus an optional project label.
-  Local tasks use the selected folder's basename, never its absolute path. Only the current
-  task is analyzed; model answers are not treated as verified decisions or outcomes.
+  Only the current task is analyzed; model answers are not treated as verified decisions or outcomes.
 - Turn **Auto-memory** off to disable these writes. This non-secret choice survives Settings
   closure, new conversations and reloads within the same tab/login. A new login starts on.
 - **Also save raw chat** in hosted **Turn options** separately opts into raw user/assistant/
   tool-summary records. Disabling Auto-memory clears raw consent; reload/new login clears raw
-  consent too. The local builder has no raw-capture option.
-- HTTP chat and builder prompts default `capture` to `true`; `capture: false` opts out. Chat
+  consent too.
+- HTTP chat defaults `capture` to `true`; `capture: false` opts out. Chat
   `captureMode` defaults to `facts`. Raw storage requires both explicit `capture: true` and
   `captureMode: "both"` or `"verbatim"`; operator raw-mode settings cannot enable it.
 - Automatic capture is parent-controlled; the model has no `remember` write tool. Hosted
@@ -59,12 +58,6 @@ distinct principals. Use dedicated revocable delegates for trusted tools and nev
   clarification can still capture the actual user statement, never a suggested reply. Accepted
   writes can finish after response disconnection; disposal prevents late metadata publication
   but cannot undo a remote job. Capture failure/pending confirmation does not undo a completed task.
-
-Local-builder recall is separate: **Use Walrus context** opts into profile/facts
-recall per task and defaults off; it neither retrieves raw chat nor enables additional writes.
-**Save reviewed checkpoint** is its own write consent, separate from project permissions
-and file/command approval. Only the submitted reviewed preference/decision/project-
-revision fields are assembled; source, transcripts, credentials, and logs are not synchronized.
 
 Capture consent in RecallLoop does not configure Claude Code/Codex hooks or their save
 preferences. Choose those independently; see [cross-tool setup](MEMORY_PORTABILITY.md).
@@ -125,53 +118,6 @@ keys and selected models for retry. A successful connection clears only its subm
 credential fields. Saved-model rechecks and selecting
 the mock do not replace unfinished reconnect forms. Catalogue discovery uses the staged key
 without installing a connection or saving that key.
-
-## Local-builder source and memory are separate
-
-Source views, unsaved drafts, coding-task history, terminal output, approval capabilities,
-and recall selections stay in **page memory**, not `localStorage`, `sessionStorage`, the
-device vault, or Walrus. Switching integrated panels preserves drafts; reload/logout/folder
-closure or an accepted project switch clears page work. Failed folder checks preserve the
-current project. Switching revokes the old workspace's approvals, recall selections and preview
-capabilities; folder/checkpoint forms cannot carry another project's drafts into the new scope.
-Temporary connection-status failures retain drafts/model selection
-but block new model tasks. Confirmed disk edits remain in the local checkout, not in a remote backup.
-
-Auto-memory separately analyzes only eligible current-user task prose after success. This
-does not synchronize task history, assistant output, file contents, or terminal data to Walrus.
-
-Each coding/command task has a fresh private worker/SDK session, private HOME/XDG/temp
-directories, an in-memory database, and no persisted events or inherited credentials/config/
-plugins/MCP/skills/references. The SDK uses an empty scratch Location; safe file tools are
-mediated by the parent. Temporary command-output files are removed during normal cleanup;
-abrupt process/OS failure is not a secure-erasure guarantee.
-
-Sending a coding task allows the explicitly selected provider to receive requested bounded
-safe disk files/tool results and recent visible user/assistant prose: six runs/twelve messages,
-24,000 characters total, and 8,000 per message. It does not submit an unsaved editor draft,
-hidden old tool logs, old file snapshots, approvals, or provider-stored references. A new
-project session clears this prose history and recall attachments without discarding the
-editor draft. Plan remains parent-enforced read-only; Build uses the selected permission policy.
-Gemini tool-call thought signatures are opaque protocol metadata, bounded and replayed only
-within the active server-side task. They never enter browser events, follow-up prose, exports
-or automatic memory. Request credentials are injected at dispatch, outside the SDK registry,
-then mutable authenticated headers are cleared; session/vault retention is separate and no
-secure heap erasure is claimed. Text-only profiles have no local tool authority.
-Commands receive no RecallLoop API credentials, but **native commands are not
-sandboxed**: project scripts can access other files/credentials/networks with OS permissions.
-Separate logins selecting the same project do not create separate disk copies.
-
-For precise attachment control, recall is separately reviewed and explicitly selected, with
-raw retrieval separately opted in. This is independent of opt-in per-task profile/facts recall.
-Five-minute expiry and memory connection replacement/recheck revoke prior recall/checkpoint
-tickets, including reconnecting the same account. Server `memoryEpoch` covers changes that
-leave public account/mode fields unchanged. An expired selected attachment cannot silently
-start a task without its context. Recalled text never grants commands or provider reconnection.
-
-Keep checkpoint fields small and reviewed: preferences, decisions, actual outcomes, and a
-user-supplied project/revision reference—not source dumps, logs, chats, or keys. They cannot
-restore source files, dependencies, credentials, approvals, processes, or the whole workspace.
-See [local builder](LOCAL_BUILDER.md) and [cross-tool checkpoint use](MEMORY_PORTABILITY.md#reviewed-local-builder-checkpoints).
 
 ## Who can still see the data
 

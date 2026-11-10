@@ -2,8 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { AppError, requireText, redactSecrets } from '../safety.mjs'
 
 export const MAX_MODEL_CONNECTIONS = 12
-export const LOCAL_OLLAMA_ID = 'local-ollama'
-export const LOCAL_OLLAMA_BASE = 'http://127.0.0.1:11434/v1'
 export const PROVIDER_HOSTS = ['api.openai.com', 'api.anthropic.com', 'openrouter.ai', 'api.groq.com', 'api.together.xyz',
   'api.deepseek.com', 'generativelanguage.googleapis.com', 'agentrouter.org', 'api.mistral.ai', 'api.fireworks.ai', 'router.huggingface.co']
 
@@ -91,7 +89,7 @@ export function validateConnection(input, env = process.env) {
   const id = input.profileId === undefined ? undefined : modelConnectionId(input.profileId)
   const name = input.profileName === undefined || input.profileName === '' ? '' : requireText(input.profileName, 'profileName', 80)
   if (/[\x00-\x1f\x7f]/.test(name) || (apiKey && (name.includes(apiKey) || id?.includes(apiKey)))) throw new AppError('invalid_request', 'Provider profile names and IDs must not contain credentials or control characters.')
-  if ([LOCAL_OLLAMA_ID, 'scripted-mock'].includes(id)) throw new AppError('invalid_request', 'This profile ID is reserved. Add your own provider profile instead.')
+  if (id === 'scripted-mock') throw new AppError('invalid_request', 'This profile ID is reserved. Add your own provider profile instead.')
   const model = requireText(input.model, 'model', 128, { pattern: /^[A-Za-z0-9._:/@+-]+$/ })
   if ([name, id || '', model, baseUrl].some(value => redactSecrets(value, [apiKey], env) !== value)) throw new AppError('invalid_request', 'Provider metadata must not contain credentials.')
   validateProviderProtocol(baseUrl, input.apiStyle)
@@ -110,11 +108,10 @@ export function modelConnectionId(value) {
 export function publicModels(config) {
   const metadata = new Map((config.catalogue || []).map(item => [item.id, item]))
   const openrouter = config.baseUrl === 'https://openrouter.ai/api/v1'
-  const detectedLocal = config.source === 'local-discovery' && config.baseUrl === LOCAL_OLLAMA_BASE
   return [...new Set(config.models || [])].filter(id => typeof id === 'string' && /^[A-Za-z0-9._:/@+-]{1,128}$/.test(id)
     && (!config.apiKey || !id.includes(config.apiKey))).slice(0, 100).map(id => {
     const item = metadata.get(id), cost = item?.cost
-    return { id, label: id, ...(cost === 'provider-free' && openrouter ? { cost } : cost === 'local' && detectedLocal ? { cost } : {}),
+    return { id, label: id, ...(cost === 'provider-free' && openrouter ? { cost } : {}),
       ...(openrouter && typeof item?.tools === 'boolean' ? { tools: item.tools } : {}) }
   })
 }

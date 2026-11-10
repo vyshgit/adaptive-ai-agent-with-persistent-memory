@@ -143,18 +143,6 @@ test('HTTP parsers accept bounded projects above 32 KB but reject bad JSON, comp
   assert.equal((await browser.json('/unknown-route')).status, 404)
 })
 
-test('the optional HTTP operator gate never substitutes for wallet authentication or bypasses origin checks', async t => {
-  const token = 'synthetic-operator-gate-token-with-32-characters'
-  const f = await workspaceHttp(t, { env: { RECALLLOOP_WORKSPACE_TOKEN: token, NODE_ENV: 'production' } })
-  assert.equal((await f.client().json('/auth/session')).status, 401)
-  const browser = f.client({ headers: { Authorization: `Bearer ${token}` } })
-  assert.equal((await browser.json('/auth/session')).data.authenticated, false)
-  assert.equal((await browser.json('/status')).status, 401)
-  assert.equal((await browser.json('/auth/session', { headers: { Origin: 'https://evil.example' } })).status, 403)
-  assert.equal((await browser.login()).status, 200)
-  assert.equal((await browser.json('/status')).status, 200)
-})
-
 test('logout during model discovery clears staged keys and cannot resurrect the old connection', async t => {
   const gate = deferred(), started = deferred()
   let staged

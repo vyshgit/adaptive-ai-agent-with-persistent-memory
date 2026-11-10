@@ -78,7 +78,7 @@ function modelProfile(value: unknown): SavedModelProfile {
   const profileId = text(model.profileId ?? 'legacy-model', 80)
   const profileName = text(model.profileName || 'Model', 80)
   const apiKey = secret(model.apiKey, true)
-  if (!/^[A-Za-z0-9_-]+$/.test(profileId) || ['local-ollama', 'scripted-mock'].includes(profileId)
+  if (!/^[A-Za-z0-9_-]+$/.test(profileId) || ['scripted-mock'].includes(profileId)
     || /[\x00-\x1f\x7f]/.test(profileName) || [profileId, profileName].some(value => redactBrowserText(value) !== value || (apiKey && value.includes(apiKey)))) throw failure('vault_invalid')
   return { baseUrl: text(model.baseUrl, 2048), apiKey, model: text(model.model, 128),
     apiStyle: model.apiStyle as 'responses' | 'chat', toolsEnabled: model.toolsEnabled, profileId, profileName }

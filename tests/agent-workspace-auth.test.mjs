@@ -20,16 +20,6 @@ test('local workspace allows local CLI/browser but rejects cross-origin and DNS 
   assert.equal(auth({ origin: 'https://localhost:3000', 'x-forwarded-proto': 'https' }).status, 403)
 })
 
-test('configured workspace token is mandatory even with same-origin headers', () => {
-  const key = 'workspace-secret-'.repeat(3)
-  const env = { RECALLLOOP_WORKSPACE_TOKEN: key, NODE_ENV: 'production' }
-  assert.equal(auth({ origin: 'http://localhost:3000' }, env).status, 401)
-  assert.equal(auth({ authorization: `Bearer ${key}` }, env).passed, true)
-  assert.equal(auth({ authorization: `Bearer ${key} bad` }, env).status, 401)
-  assert.equal(auth({}, { RECALLLOOP_REQUIRE_WORKSPACE_AUTH: 'true' }).status, 401)
-  assert.equal(auth({}, { RECALLLOOP_WORKSPACE_TOKEN: 'short' }).status, 503)
-})
-
 test('remote origin access is explicit and does not act as multi-user authentication', () => {
   const headers = { host: 'workspace.example', origin: 'https://workspace.example' }
   assert.equal(auth(headers, { NODE_ENV: 'production' }).status, 403)

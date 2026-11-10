@@ -166,7 +166,7 @@ export interface WorkspaceStatus {
   memory: MemoryStatus
   tatum: { configured: boolean; verified: boolean; verifiedAt?: string }
   memoryConnection?: { accountId: string; owner: string; publicKey: string; verified: boolean; verifiedAt?: string } | null
-  coding?: { maxToolRounds: number; reviewRequired: boolean; terminal: boolean; localBuilder: boolean }
+  coding?: { maxToolRounds: number; reviewRequired: boolean }
 }
 
 export interface WalletSession {

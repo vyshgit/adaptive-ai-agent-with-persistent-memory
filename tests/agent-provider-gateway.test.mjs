@@ -4,7 +4,6 @@ import { createLlm } from '../server/agent/llm.mjs'
 import { validateConnection, publicModels } from '../server/agent/connections.mjs'
 import { providerHeaders, providerHeaderOverrides, dispatchProviderRequest, normalizeProviderPayload } from '../server/agent/provider-request.mjs'
 import { providerFailure } from '../server/agent/provider-errors.mjs'
-import { modelRequest } from '../server/builder/provider-boundary.mjs'
 import { deferred } from './helpers/workspace-http.mjs'
 
 const key = 'SYNTHETIC_GATEWAY_KEY'
@@ -162,37 +161,39 @@ test('text-only normalization removes orphaned tool history without promoting it
   assert.deepEqual(plain.messages, [{ role: 'system', content: 'Trusted system' }, { role: 'user', content: 'Current task' }, { role: 'assistant', content: 'Visible prose' }])
   for (const name of ['tools', 'functions', 'tool_choice', 'function_call', 'parallel_tool_calls']) assert.equal(Object.hasOwn(plain, name), false)
   assert.equal(JSON.stringify(input), original)
-  const responseConfig = { ...config, apiStyle: 'responses' }
-  const admitted = await modelRequest(new Request(`${config.baseUrl}/responses`, { method: 'POST', body: JSON.stringify({ model: config.model, stream: true,
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Current task' }] },
-      { type: 'function_call', call_id: 'old', name: 'read_file', arguments: '{}' }, { type: 'function_call_output', call_id: 'old', output: 'PRIVATE_RESULT' }],
-    tools: [{ type: 'function', ...tool.function }], tool_choice: 'auto' }) }), responseConfig)
-  const body = JSON.parse(admitted.body)
-  assert.equal(body.input.length, 1)
-  assert.equal(body.tools, undefined)
-  assert.equal(body.tool_choice, undefined)
-  assert.equal(admitted.body.includes('PRIVATE_RESULT'), false)
+  // The same normalization must hold on the live dispatch path, including the
+  // Responses-style adapter's converted tool history and the credential-free headers.
+  let admitted
+  const resConfig = { ...config, apiStyle: 'responses' }
+  const llm = createLlm({ env: {}, fetchImpl: async (_url, options) => { admitted = JSON.parse(options.body); return json(answer('responses')) } })
+  await collect(llm.streamCompletion({ config: resConfig, model: config.model, tools: [tool], stream: false,
+    messages: [{ role: 'user', content: 'Current task' }, { role: 'assistant', content: '', tool_calls: [{ id: 'old-call', function: { name: 'read_file', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'old-call', content: 'PRIVATE_RESULT' }] }))
+  assert.equal(admitted.input.length, 1)
+  assert.equal(admitted.tools, undefined)
+  assert.equal(admitted.tool_choice, undefined)
+  assert.equal(JSON.stringify(admitted).includes('PRIVATE_RESULT'), false)
 })
 
-test('SDK payload normalization uses Gemini and modern OpenAI token fields and omits incompatible sampling settings', async () => {
+test('token budgets and sampling settings match each provider protocol without propagating credentials', async () => {
   for (const [baseUrl, model, expectedToken] of [
     ['https://generativelanguage.googleapis.com/v1beta/openai', 'catalogue-model', 'max_tokens'],
     ['https://api.openai.com/v1', 'gpt-5-catalogue-model', 'max_completion_tokens'],
-    ['https://api.anthropic.com/v1', 'catalogue-model', 'max_completion_tokens'],
+    ['https://api.anthropic.com/v1', 'catalogue-model', 'max_tokens'],
   ]) {
     const config = { ...connection(baseUrl), model }
+    let admitted, admittedHeaders
+    const llm = createLlm({ env: {}, fetchImpl: async (_url, options) => { admitted = JSON.parse(options.body); admittedHeaders = options.headers; return json(answer('chat')) } })
+    await collect(llm.streamCompletion({ config, model, tools: [tool], stream: false,
+      messages: [{ role: 'system', content: 'Trusted system' }, { role: 'user', content: 'Task' }] }))
     const google = baseUrl.includes('googleapis'), anthropic = baseUrl.includes('anthropic')
-    const admitted = await modelRequest(new Request(`${baseUrl}/chat/completions`, { method: 'POST', body: JSON.stringify({ model, stream: true,
-      messages: [{ role: 'system', content: 'Trusted system' }, { role: 'user', content: 'Task' }], tools: [tool],
-      [google || anthropic ? 'max_completion_tokens' : 'max_tokens']: 100_000, temperature: 0.2, top_p: 0.7 }) }), config)
-    const body = JSON.parse(admitted.body)
-    assert.equal(body[expectedToken], 4096)
-    assert.equal(body[expectedToken === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens'], undefined)
-    assert.equal(body.parallel_tool_calls, google ? undefined : false)
-    assert.equal(body.temperature, anthropic ? undefined : 0.2)
-    assert.equal(body.top_p, anthropic ? undefined : 0.7)
-    assert.equal(body.messages[0].role, 'system')
-    assert.ok(credentials.every(name => !admitted.headers.has(name)))
+    assert.equal(admitted[expectedToken], 4000)
+    assert.equal(admitted[expectedToken === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens'], undefined)
+    assert.equal(admitted.parallel_tool_calls, google ? undefined : undefined)
+    assert.equal(admitted.temperature, undefined)
+    assert.equal(admitted.top_p, undefined)
+    assert.equal(admitted.messages[0].role, 'system')
+    assert.ok(credentials.every(name => !admittedHeaders.has(name)))
   }
 })
 

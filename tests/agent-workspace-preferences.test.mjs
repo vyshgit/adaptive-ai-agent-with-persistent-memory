@@ -13,7 +13,6 @@ function storage() {
 const identity = walletAgentId('0xa'), tag = 'a'.repeat(32)
 const setup = { baseUrl: 'https://api.openai.com/v1', apiStyle: 'responses', model: 'synthetic-model' }
 const preferences = { provider: 'openai', providers: { openai: setup }, accountId: '0xa',
-  builder: { explorer: false, mode: 'plan', model: setup, cwd: 'web-app', seconds: 45, outputFolder: 'web-app/dist', entry: 'home.html' },
   conversation: { sidebar: false, mode: 'plan', stream: false, model: setup } }
 
 test('the preference cache admits only named non-sensitive setup fields, not generic variables or authority', () => {
@@ -22,7 +21,7 @@ test('the preference cache admits only named non-sensitive setup fields, not gen
     permissions: 'standard', folderConsent: true, useMemory: true, capture: true, captureRaw: true, memoryIds: ['PRIVATE_MEMORY'],
     command: 'PRIVATE_COMMAND', task: 'PRIVATE_TASK', draft: 'PRIVATE_SOURCE', output: 'PRIVATE_OUTPUT', approvals: [{ id: 'PRIVATE_APPROVAL' }] }
   const raw = { ...preferences, ...privateFields, providers: { openai: { ...setup, ...privateFields }, unknown: setup },
-    builder: { ...preferences.builder, ...privateFields }, conversation: { ...preferences.conversation, ...privateFields } }
+    conversation: { ...preferences.conversation, ...privateFields } }
   assert.deepEqual(normalisePreferences(raw), preferences)
   const tab = storage(), cache = createWorkspaceCache(identity, tag, tab)
   assert.equal(savePreferences(raw, cache), true)
@@ -34,11 +33,10 @@ test('cache validation rejects credential URLs, malformed values, unsafe paths a
     'https://api.example.com/%73%6b-secret', 'javascript:alert(1)', 'file:///etc/passwd', 'not-a-url', `https://example.com/${'a'.repeat(600)}`]) {
     assert.deepEqual(normalisePreferences({ providers: { custom: { ...setup, baseUrl } } }), {})
   }
-  for (const path of ['/etc', '../outside', 'web/../outside', 'web\\outside', 'web//dist', 'npm test; curl example.com', 'a'.repeat(241)]) {
-    assert.deepEqual(normalisePreferences({ builder: { cwd: path, outputFolder: path, entry: path } }), {})
+  for (const seconds of [-1, 0, 121, 30.5, '60', Infinity, NaN]) {
+    assert.deepEqual(normalisePreferences({ conversation: { sidebar: seconds, stream: seconds, mode: String(seconds) } }), {})
   }
-  for (const seconds of [-1, 0, 121, 30.5, '60', Infinity, NaN]) assert.deepEqual(normalisePreferences({ builder: { seconds } }), {})
-  assert.deepEqual(normalisePreferences({ provider: '__proto__', accountId: 'wallet address', builder: { explorer: 'true', mode: 'execute' },
+  assert.deepEqual(normalisePreferences({ provider: '__proto__', accountId: 'wallet address',
     conversation: { sidebar: 1, stream: 'false', mode: 'execute' } }), {})
   assert.deepEqual(normalisePreferences({ providers: { openai: { ...setup, baseUrl: `${setup.baseUrl}/`, model: 'a'.repeat(64) } } }),
     { providers: { openai: { baseUrl: setup.baseUrl, apiStyle: setup.apiStyle } } })
@@ -49,7 +47,7 @@ test('recognized or registered secrets are omitted rather than stored as redacte
   const key = 'SYNTHETIC_REGISTERED_PREF_SECRET'
   registerBrowserSecret(key)
   for (const model of [key, `sk-${'q'.repeat(24)}`, `suiprivkey1${'a'.repeat(40)}`]) {
-    assert.deepEqual(normalisePreferences({ providers: { openai: { ...setup, model } }, builder: { model: { ...setup, model }, cwd: model } }),
+    assert.deepEqual(normalisePreferences({ providers: { openai: { ...setup, model } }, conversation: { model: { ...setup, model } } }),
       { providers: { openai: { baseUrl: setup.baseUrl, apiStyle: setup.apiStyle } } })
   }
   assert.deepEqual(normalisePreferences({ providers: { custom: { ...setup, baseUrl: `https://example.com/${key}` } }, accountId: key }), {})
@@ -143,8 +141,8 @@ test('profile identity pins duplicate model IDs even when another account at the
   assert.equal(preferredConnection([second, first], second, preference), first)
   assert.equal(preferredModel(first, preference), setup.model)
   const malformed = { ...preference, connectionId: 'second-account|other-model' }
-  assert.deepEqual(normalisePreferences({ builder: { model: malformed } }), {})
-  assert.deepEqual(normalisePreferences({ builder: { model: preference } }), { builder: { model: preference } })
+  assert.deepEqual(normalisePreferences({ conversation: { model: malformed } }), {})
+  assert.deepEqual(normalisePreferences({ conversation: { model: preference } }), { conversation: { model: preference } })
 })
 
 test('the auto-memory preference is boolean, login-scoped and never restores raw-capture consent', () => {
