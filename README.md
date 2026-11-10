@@ -22,8 +22,10 @@ reviewed proposals and separately opted-in raw transcript storage.
 > have passing observations across the full runs and targeted reruns.
 > Typecheck and production build also pass locally. Real wallet-extension onboarding,
 > live model generation, authorized MemWal access, Tatum reads, and Mainnet writes still need live validation.
-> The dependency audit remains a release blocker: **28 flagged packages (22 moderate, 6 high)**.
-> No verified Mainnet evidence has been generated. See [validation](docs/VALIDATION.md)
+> The dependency audit no longer blocks at high severity: the verified `zod@^4.6.6` override
+> resolved all 6 high findings; **26 unfixable moderate npm-tooling findings** remain (CI gates
+> on high). No verified Mainnet evidence has been generated, and no clean-audit claim is made.
+> See [validation](docs/VALIDATION.md)
 > and the [submission checklist](docs/SUBMISSION_CHECKLIST.md).
 
 ## Demo video
@@ -387,7 +389,8 @@ Linux environments with an existing Chromium may use
 GitHub Actions is configured for Node 24.22.1/26.13.0 validation with bounded test concurrency
 and separate hosted-workspace/local-builder browser matrix jobs. Both Node jobs also run the
 preserved, credential-free legacy retrieval checks. The workflow was checked locally; the
-unpushed follow-up has no hosted CI result. The unresolved audit prevents a clean dependency gate.
+The follow-up has no hosted CI result yet. The audit no longer blocks at high severity
+after the verified `zod` override, but 26 moderate findings remain documented above.
 Browser tests use signed **synthetic** wallets and mocked credential responses, not live
 extension/provider authorization. The one-worker harness paces tests before login to respect
 the unchanged 12-sign-ins/minute limit; it does not intercept authentication responses,
@@ -432,11 +435,13 @@ keys in **development and production**. The legacy publisher stores plaintext bl
 it must not be used for private wallet chats. Never put unrelated secrets in selected files,
 chat, or memory.
 
-The current full and production dependency audits flag **28 packages: 22 moderate and 6 high**,
-including propagated OpenCode-package findings. The scoped compatible `gcp-metadata@8.1.2`
-override removes the affected `gaxios` subtree, but Zod, glob, and minimatch advisories remain.
-No unverified major override or clean-audit/security claim is made. See
-[dependency review](docs/VALIDATION.md#dependency-audit--release-blocker) before release.
+After the verified `zod@^4.6.6` override, the full and production audits report **26 moderate
+findings and no high severity**, all propagated through the pinned OpenCode SDK chain from
+npm tooling internals (`glob`, `minimatch`, `@npmcli/*`, `sigstore`,
+`gcp-metadata`-adjacent packages) that have no compatible fix. CI gates the audit at high
+severity rather than blocking on these. No unverified major override or clean-audit/security
+claim is made. See
+[dependency review](docs/VALIDATION.md#dependency-audit--gates-and-remaining-advisories) before release.
 
 - [Local browser builder](docs/LOCAL_BUILDER.md) — invocation-folder launcher, integrated
   workspace, risk-based/Strict permissions, private SDK tasks, previews, and portable context.

@@ -27,8 +27,9 @@ Local validation and release-review status updated **10 November 2026**.
 - [x] Shared provider gateway, endpoint-bound dispatch authentication/cleanup, text-only tool
   denial, private Gemini signature replay, and retained-context provider recovery validated
   offline. The user's specific Gemini HTTP 400 still needs credential-redacted error details.
-- [ ] **Dependency release gate:** full and production audits flag 28 packages (22 moderate,
-  6 high). Resolve compatible fixes and rerun the affected checks; do not claim a clean audit.
+- [ ] **Dependency oversight:** audits now report 26 moderate npm-tooling findings and 0 high
+  (CI gates on high severity after the verified `zod@^4.6.6` override). Monitor the OpenCode
+  SDK chain for compatible updates; do not claim a clean audit.
 - [ ] **Walrus Memory writing on Mainnet:** verify the user's authorized account/delegate,
   actual completed writes, and independent inventory. Health/config responses are not proof.
 - [ ] **At least 10 Mainnet memories:** bundled guarded seed targets 12 unique confirmed

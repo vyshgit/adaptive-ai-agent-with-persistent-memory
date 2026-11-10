@@ -1,8 +1,9 @@
 # Validation and live evidence status
 
-Updated 10 November 2026. **Local runtime/offline checks pass; the dependency audit, live
-integration, and hackathon submission remain incomplete.** The audit flags 28 packages;
-no real Mainnet blob evidence has been generated and no success evidence file is checked in.
+Updated 10 November 2026. **Local runtime/offline checks pass; live integration and the
+hackathon submission remain incomplete.** The audit leaves 26 unfixable moderate npm-tooling
+findings (0 high, CI gates on high); no real Mainnet blob evidence has been generated and no
+success evidence file is checked in.
 
 ## Reproducible local checks
 
@@ -20,7 +21,7 @@ obtained on Linux with Node 26.13.0 and system Chromium.
 | `npm run demo:agent` | Passed, isolated mock; first-session fact recalled in a new session, scripted review-only code proposal; no network/provider/Mainnet calls. |
 | `npm run benchmark:retrieval` | Passed; four synthetic lexical cases, Recall@3 / MRR **1 / 1**. |
 | `npm run evaluate:retrieval` | Passed; synthetic evaluation Recall@3 / MRR **1 / 1**, hard-negative rate **0.375**, **0 cross-agent leaks**. Not a live semantic-quality benchmark. |
-| `npm audit --fetch-retries=0 --fetch-timeout=15000` / `npm audit --omit=dev --fetch-retries=0 --fetch-timeout=15000` | Both observed results exit **1** and flag **28 packages: 22 moderate, 6 high**, from three root advisories. The full audit was freshly rerun; the production-only result is retained from the earlier 10 November check against the same lockfile. See [dependency review](#dependency-audit--release-blocker). |
+| `npm audit --fetch-retries=0 --fetch-timeout=15000` / with `--omit=dev` | Post-override state: both exit **1** only under the default low-level gate due to **26 moderate** npm-tooling findings; with `--audit-level=high` both exit **0** (0 high). CI gates on high. The production-only result reflects the same rerun on the current lockfile. See [dependency review](#dependency-audit--gates-and-remaining-advisories). |
 
 The folder/gateway continuation reran the complete unit suite, typecheck/build, both Chromium
 suites, launcher help, CLI demo and retrieval checks. The first unit run overlapped both browser
@@ -331,28 +332,31 @@ the checkbox and character count on small screens. The disclosure now gets its o
 mobile row. All five accessibility scenarios passed after that layout-only change, and the
 refreshed short-height capture shows readable full-width text. Typecheck and build also passed.
 
-### Dependency audit — release blocker
+### Dependency audit — gates and remaining advisories
 
-Both full and production audits on **10 November 2026** flag **28 packages (22 moderate,
-6 high)**. These are affected-package/propagation counts, not 28 independent advisories.
-The root findings in the installed lockfile are:
+Full and production audits were rerun on **10 November 2026** after the dependency
+cleanup. One root advisory was resolved with a verified override; the remaining npm-tooling
+advisories have no compatible fix inside the pinned OpenCode SDK chain.
 
-| Dependency | Finding | Compatibility constraint |
+| Dependency | Finding | Resolution |
 | --- | --- | --- |
-| `zod@3.25.76`, under `gitlab-ai-provider` | [Oversized constrained-collection validation can exhaust memory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), high. The other installed Zod copy is 4.6.7. | Replacing Zod 3 with a patched Zod 4 is a major API change, not a verified compatible override. |
-| `glob@13.0.5`, through `@opencode/util` and npm tooling | [AbortSignal cancellation can permit post-timeout filesystem traversal](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), moderate. | Reported affected range ends at 14.0.1; moving the installed 13.x tree to a patched 14.x requires compatibility testing. |
-| `minimatch@10.2.5`, through glob/npm tooling | [Globparts amplification can cause denial of service](https://github.com/advisories/GHSA-g3hv-75wg-m249), moderate. | Reported patch is 11.0.1 or newer, a major change from the installed 10.x tree. |
+| `zod` (3.25.76 / <4.6.6 copies under `gitlab-ai-provider` and friends) | [Oversized constrained-collection validation can exhaust memory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), high. | **Resolved.** A package override pins `zod` to `^4.6.6` (installs 4.6.7 everywhere). Verified compatible with regression tests: typecheck, **357/357 unit/HTTP/CLI tests**, production build, and the two-session recall demo all pass. The earlier "major change, unverified override" constraint no longer applies. |
+| `glob@13.x`, through `@opencode/util` and npm tooling | [AbortSignal cancellation can permit post-timeout filesystem traversal](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), moderate. | No compatible fix: the affected range ends at 14.0.1 and moving the installed 13.x tree to a patched 14.x major is not verified. |
+| `minimatch@10.x`, through glob/npm tooling | [Globparts amplification can cause denial of service](https://github.com/advisories/GHSA-g3hv-75wg-m249), moderate. | Reported patch is 11.0.1+, a major change from the installed 10.x tree; not verified. |
 
-`npm audit` reports no automatic compatible fix for these roots. The exact OpenCode SDK/
-plugin/core **2.2.6** and Effect **4.1.0** pins remain. Only the previously verified scoped
-`google-auth-library → gcp-metadata@8.1.2` override was applied; its installed gaxios tree is
-7.3.1. No forced major override or `npm audit fix --force` was used.
+**Current state: 26 moderate findings, 0 high, in both full and production audits.** These
+are affected-package/propagation counts, not 26 independent advisories. `npm audit` reports
+no automatic compatible fix for the remaining roots. The exact OpenCode SDK/plugin/core
+**2.2.6** and Effect **4.1.0** pins remain. Overrides applied: the previously verified
+`google-auth-library → gcp-metadata@8.1.2`, plus `zod@^4.6.6` described above; no forced
+major override or `npm audit fix --force` was used.
 
-The private SDK disables inherited configuration/plugins and unselected providers, and the
-application bounds request/file/output sizes. Those tested restrictions are not proof that
-these dependency findings are harmless or fixed. Do not claim a clean audit or production
-readiness. Resolve and regression-test compatible dependency changes before release, then
-rerun both audits and all affected SDK/unit/browser checks without relaxing approval gates.
+Because remaining findings are moderate and unfixable within the SDK pins, the CI audit
+gate (`.github/workflows/tests.yml`) checks **high severity or worse** and annotates the
+documented moderates. They stay a release consideration, not a CI blocker: do not claim a
+clean audit. Resolve and regression-test compatible dependency changes before release,
+then rerun both audits and all affected SDK/unit/browser checks without relaxing approval
+gates.
 
 ## Live manual validation
 
@@ -437,7 +441,7 @@ never reused by the CLI. A checkpoint is a chain observation, not independent st
 | Claude Code/Codex cross-tool recall | Not attempted; official setup guidance and key-free handoff only. Client installation/authorization and any writes need separate approval. |
 | Live local-builder model/build/checkpoint loop | Not attempted; actual SDK with scripted loopback models, real synthetic local files/commands, and mock checkpoints passed offline. |
 | macOS/WSL local-builder execution | Not validated; current local SDK/process/preview evidence is Linux-only. |
-| Dependency audit | **Blocked: 28 affected packages (22 moderate, 6 high)** in both full and production audits; no verified compatible fixes for the three remaining root advisories. |
+| Dependency audit | **Unblocked at high severity: 26 moderate npm-tooling findings (0 high)** after the verified `zod@^4.6.6` override; incompatible fixes remain, and CI gates on high severity. Still not a clean audit. |
 | Published learning-loop blog | Not published; dropped by choice. The submission form's description field plus the demo video carry that content (see README demo video slot). |
 | Working live demo + 2–3 minute video | Not yet recorded/validated live. Offline demo works; paste the final URL in the README demo video field. |
 | Public completed branch and hosted CI | Historical workspace PR #2 merged with successful CI; redesign branch remains local/unpushed with uncommitted follow-up edits and no current hosted CI or PR. Both browser suites are now in the locally checked workflow; the audit gate still fails. |
