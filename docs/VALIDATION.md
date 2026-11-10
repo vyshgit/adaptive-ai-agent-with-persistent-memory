@@ -304,13 +304,13 @@ No unintended credentials, secret environment files, generated reports, or build
 in the reviewed change inventory. `git diff --check` passed. This focused review and the
 dependency audit are not a complete application or password-manager security audit.
 
-The protected local `docs/ACTION_PLAN.md` and `docs/IMPLEMENTATION_PROMPT.md` files retain
-their pre-existing user edits and were not edited during this continuation. Earlier
-redesign work has local commits, but the privacy/portability/vault/local-builder/provider/automatic-memory follow-up is
-uncommitted. SDK dependencies were installed during the earlier requested local-builder work;
-no dependency changes were made during this final review. No commit, push, merge, or live/
-billable API test was performed for this continuation. The separate documentation worktree was not edited.
-See [scope amendments](SCOPE_AMENDMENTS.md).
+The build-contract planning documents (`ACTION_PLAN.md`, `IMPLEMENTATION_PROMPT.md`,
+`SCOPE_AMENDMENTS.md`) were removed from the repository before final packaging; their
+committed content, including the preserved user edits, remains recoverable from git
+history. Earlier redesign work has local commits; the privacy/portability/vault/
+local-builder/provider/automatic-memory follow-up and this documentation cleanup are local-only edits
+until a final push. No commit, push, merge, or live/billable API test was performed for this
+continuation review.
 
 The initial automatic-memory browser runs completed all scheduled scenarios: **61/62 hosted**
 and **20/23 builder** passed. The hosted failure revealed a real selection race: Settings saved
@@ -438,8 +438,8 @@ never reused by the CLI. A checkpoint is a chain observation, not independent st
 | Live local-builder model/build/checkpoint loop | Not attempted; actual SDK with scripted loopback models, real synthetic local files/commands, and mock checkpoints passed offline. |
 | macOS/WSL local-builder execution | Not validated; current local SDK/process/preview evidence is Linux-only. |
 | Dependency audit | **Blocked: 28 affected packages (22 moderate, 6 high)** in both full and production audits; no verified compatible fixes for the three remaining root advisories. |
-| Published learning-loop blog | Draft only: [BLOG_DRAFT.md](BLOG_DRAFT.md). |
-| Working live demo + 2–3 minute video | Not yet recorded/validated live. Offline demo works. |
+| Published learning-loop blog | Not published; dropped by choice. The submission form's description field plus the demo video carry that content (see README demo video slot). |
+| Working live demo + 2–3 minute video | Not yet recorded/validated live. Offline demo works; paste the final URL in the README demo video field. |
 | Public completed branch and hosted CI | Historical workspace PR #2 merged with successful CI; redesign branch remains local/unpushed with uncommitted follow-up edits and no current hosted CI or PR. Both browser suites are now in the locally checked workflow; the audit gate still fails. |
 
 Do not promote a live checkbox to passed based on a test fixture, mock blob, public health

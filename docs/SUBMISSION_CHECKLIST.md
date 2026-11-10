@@ -37,8 +37,10 @@ Local validation and release-review status updated **10 November 2026**.
   account-owner reads through Tatum HTTP GraphQL. A checkpoint is not proof of Walrus storage.
 - [ ] **Learning over time:** fresh history/browser/server session recalls a confirmed
   preference or correction and visibly changes a later answer. Record the actual live model.
-- [ ] **Published blog:** publish the learning loop, Tatum + Walrus use, measured/observed
-  example, and honest limits. [BLOG_DRAFT.md](BLOG_DRAFT.md) is only a draft, not this gate.
+- [ ] **Demo video first (mandatory):** the 2–3 minute demo is required by the form.
+  Use it plus the project-description field for the learning loop, Tatum + Walrus
+  example, and honest limits. Paste the final URL into the README demo video slot.
+  A separate blog post is optional and not required for this submission.
 - [ ] **Working demo:** verify real wallet-extension/provider/account setup on the intended
   demo environment. Offline/mock fallback must be visibly labeled, not marketed as Mainnet.
 - [ ] **Public repository:** push the completed branch and verify access without login.
@@ -64,10 +66,12 @@ The official rules list:
 - Tatum ID, public SUI address, and **MemWal account object ID** (not the wallet address).
 - **MEMWAL_AGENT_ID = the delegate public key** shown after verification/in the official
   dashboard. Do not submit the private delegate key or RecallLoop's hashed wallet namespace.
-- Project description, viewable 2–3 minute demo video, and public GitHub repository.
+- Demo video URL (mandatory) and public GitHub repository; blog URL only if one was
+  published (optional).
 - Honest feedback about building with Walrus and with Tatum AI Builder. Do not claim AI
   Builder usage or a bonus unless the actual project qualifies.
-- Published blog URL in the available submission/project-description field.
+- Published blog URL in the available submission/project-description field — only if you
+  chose to publish one; otherwise leave empty and rely on the demo video + description.
 
 Recheck eligibility/terms and the one-submission-per-person rule. Personal form details,
 credentials, and the act of submitting should be handled by the entrant; no account,
@@ -85,7 +89,7 @@ fields, authorization headers, cookies, a wallet seed phrase, or private user me
 | 0:50–1:25 | New conversation with no old history; recall chips and a preference-aware Build proposal. |
 | 1:25–1:55 | Review before/after, apply only in browser, download, and record an outcome you actually tested locally. |
 | 1:55–2:30 | Fresh browser/server session with the same wallet/account; recall preference/correction, show 10+ verified Mainnet records and evidence. |
-| 2:30–2:50 | Public repo/blog/demo links; boundaries: local history versus portable memory, no model retraining, and native local commands governed by Standard/Strict permissions rather than sandboxing. |
+| 2:30–2:50 | Public repo and demo video links; boundaries: local history versus portable memory, no model retraining, and native local commands governed by Standard/Strict permissions rather than sandboxing. |
 
 If timing requires cuts, preconfigure credentials and use prepared **real** evidence. Do
 not substitute a mock count or fabricated blob for a slow live write. Use the wallet

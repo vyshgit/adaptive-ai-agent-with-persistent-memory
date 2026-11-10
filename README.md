@@ -26,6 +26,14 @@ reviewed proposals and separately opted-in raw transcript storage.
 > No verified Mainnet evidence has been generated. See [validation](docs/VALIDATION.md)
 > and the [submission checklist](docs/SUBMISSION_CHECKLIST.md).
 
+## Demo video
+
+**Demo video:** _[paste your 2–3 minute demo recording URL here — YouTube, Loom, or a direct MP4]_
+
+Upload once, paste the viewable link above, and submit the same URL in the hackathon
+form's mandatory video field. The [submission checklist](docs/SUBMISSION_CHECKLIST.md)
+keeps the suggested shot list and the honesty gates to capture on screen.
+
 ## Run locally
 
 Use a patched Node.js runtime: **24.x (24.22.1+) or 26.12.1+**;
@@ -443,10 +451,5 @@ No unverified major override or clean-audit/security claim is made. See
   reconnection, locking/forgetting, and passphrase-loss limits.
 - [Cross-tool memory setup](docs/MEMORY_PORTABILITY.md) — verified handoff, isolated client
   credentials, exact namespaces, and honest end-to-end checks.
-- [Scope amendments](docs/SCOPE_AMENDMENTS.md) — requested coding/wallet scope and conflicts
-  with the committed original [plan](docs/ACTION_PLAN.md) and [prompt](docs/IMPLEMENTATION_PROMPT.md).
-  Newer local edits in those two documents were preserved byte-for-byte. The current privacy,
-  portability, device-vault, local-builder, provider and automatic-memory follow-up remains uncommitted.
 - [Validation and live test checklist](docs/VALIDATION.md).
-- [Learning-loop blog draft](docs/BLOG_DRAFT.md) — not a published submission deliverable.
 - [Submission checklist](docs/SUBMISSION_CHECKLIST.md) — deadline and outstanding evidence.
