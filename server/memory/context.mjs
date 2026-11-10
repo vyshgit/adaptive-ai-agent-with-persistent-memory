@@ -22,7 +22,7 @@ export function formatContext(hits, { maxTokens = 800, limit = 8, preserveOrder 
   for (const memory of ordered.slice(0, cap)) {
     // Keep the time: same-day corrections must not look equally recent.
     const date = memory.createdAt || 'date unavailable'
-    const line = `- [${date}; ${memory.tier}; blob=${memory.blobId}] ${memory.text.replace(/\r?\n/g, ' ')}`
+    const line = `- [${date}; ${memory.tier}] ${memory.text.replace(/\r?\n/g, ' ')}`
     const proposed = `## Relevant memories (${lines.length + 1})\n${[...lines, line].join('\n')}`
     if (estimateTokens(proposed) > budget) { truncated = true; continue }
     lines.push(line)

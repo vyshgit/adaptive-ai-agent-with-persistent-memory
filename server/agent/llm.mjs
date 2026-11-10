@@ -133,7 +133,7 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
       yield { type: 'finish', reason: 'tool_calls' }
       return
     }
-    const recalled = memories.length ? `Recalled context:\n${memories.slice(0, 4).map(memory => `• ${memory.text} [${memory.blobId}]`).join('\n')}\n\nI will use these preferences in this session.`
+    const recalled = memories.length ? `Recalled context:\n${memories.slice(0, 4).map(memory => `• ${memory.text}`).join('\n')}\n\nI will use these preferences in this session.`
       : 'No relevant memories yet. Tell me a preference or a lesson, then start a new session to see recall.'
     const proposed = toolMessages.some(message => message.toolCallId === 'mock-propose')
     const text = `Mock model — deterministic offline demo, not a live LLM.\n\n${recalled}${proposed ? '\n\nA scripted code change is ready in Review. Nothing has been applied or executed. Review it before accepting.' : toolMessages.length ? '\n\nI inspected the selected file. In Talk or Plan mode, no code-change proposals are created. Switch to Build to review a scripted sandbox fix.' : ''}`

@@ -37,12 +37,31 @@ interface Props {
 
 export default function ChatPane(props: Props) {
   const [draft, setDraft] = useState('')
+  const [queue, setQueue] = useState<string[]>([])
   const scroll = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const following = useRef(true)
   const last = props.session.messages.at(-1)
-  useEffect(() => { setDraft(''); following.current = true; scroll.current?.scrollTo({ top: 0 }) }, [props.session.id])
+  useEffect(() => { setDraft(''); setQueue([]); following.current = true; scroll.current?.scrollTo({ top: 0 }) }, [props.session.id])
   useEffect(() => { if (following.current && scroll.current) scroll.current.scrollTop = props.session.messages.length ? scroll.current.scrollHeight : 0 }, [props.session.messages])
+  // Follow-ups typed during a turn are queued and flushed once the turn fully settles (capture included).
+  useEffect(() => {
+    if (props.busy || !props.canSend || !queue.length) return
+    const [next, ...rest] = queue
+    setQueue(rest)
+    following.current = true
+    props.onSend(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.busy, props.canSend, queue, props.session.id])
+  function handleSend() {
+    const text = draft.trim()
+    if (!text) return
+    if (!props.canSend) return
+    if (props.busy) { setQueue(old => [...old.slice(0, 3), text]); setDraft(''); return }
+    following.current = true
+    props.onSend(text)
+    setDraft('')
+  }
   const suggestions = [
     { title: 'Remember a preference', hint: 'Useful context is remembered automatically', mode: 'talk' as const, prompt: 'I prefer short, practical plans and EUR for prices.' },
     { title: 'Plan a short trip', hint: 'Start with what you’ve already shared', mode: 'plan' as const, prompt: 'Plan a quick trip to Alaska. Recall my departure city and travel preferences first, and ask if anything important is missing.' },
@@ -75,8 +94,8 @@ export default function ChatPane(props: Props) {
         } : undefined}
         onRetry={message === last && props.canSend ? () => { following.current = true; props.onRetry(message) } : undefined} />)}
     </div>
-    <Composer inputRef={composer} value={draft} onChange={setDraft} onSend={() => { if (props.canSend && draft.trim()) { following.current = true; props.onSend(draft); setDraft('') } }} onStop={props.onStop}
-      model={props.modelChoice} onModel={props.onModel} connections={props.connections} busy={props.busy} disabled={!props.canSend} phase={props.phase}
+    <Composer inputRef={composer} value={draft} onChange={setDraft} onSend={handleSend} onStop={props.onStop}
+      model={props.modelChoice} onModel={props.onModel} connections={props.connections} busy={props.busy} disabled={!props.canSend} phase={props.phase} queued={queue.length}
       capture={props.capture} onCapture={props.onCapture} captureRaw={props.captureRaw} onCaptureRaw={props.onCaptureRaw} stream={props.stream} onStream={props.onStream} memoryStatus={props.memoryStatus} files={props.selectedFiles} onFiles={props.onFiles} mode={props.mode} onMode={props.onMode} />
   </section>
 }
