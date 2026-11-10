@@ -158,9 +158,16 @@ export function useAgentSession(onStored: () => void, cache: WorkspaceCache) {
     updateSession(activeId, old => ({ ...old, updatedAt: new Date().toISOString(), messages: old.messages.map(message => ({ ...message,
       proposals: message.proposals?.map(proposal => proposal.id === id ? { ...proposal, status } : proposal) })) }))
   }
+  function dismissProposal(id: string) {
+    updateSession(activeId, old => ({ ...old, updatedAt: new Date().toISOString(), messages: old.messages.map(message => ({ ...message,
+      proposals: message.proposals?.filter(proposal => proposal.id !== id) })) }))
+  }
+  function clearProposals() {
+    updateSession(activeId, old => ({ ...old, updatedAt: new Date().toISOString(), messages: old.messages.map(message => message.proposals?.length ? { ...message, proposals: [] } : message) }))
+  }
   const activeSession = sessions.find(session => session.id === activeId) || sessions[0]
   return { sessions, activeSession, busy: phase !== 'idle', phase, cacheWarning, send, stop: () => request.current?.abort(),
-    newSession, selectSession, renameSession, deleteSession, clearCache, reviewProposal }
+    newSession, selectSession, renameSession, deleteSession, clearCache, reviewProposal, dismissProposal, clearProposals }
 }
 
 function pendingCapture(message: string): StoredCapture { return { verbatim: 0, facts: 0, failed: 0, blobs: [], pending: true, message } }

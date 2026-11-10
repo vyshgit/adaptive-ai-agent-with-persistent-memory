@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react'
-import { FileCode2, FolderOpen, Download, Plus, Upload } from 'lucide-react'
+import { FileCode2, FolderOpen, Download, Plus, Upload, Monitor, X } from 'lucide-react'
 import type { Project, ProjectFile } from './types.ts'
 import { Button, IconButton, Checkbox, Modal, fieldClass } from './ui.tsx'
 import { contextCharacters, importTextFiles, normaliseProject, validFilePath, MAX_CONTEXT_CHARS, MAX_FILE_CHARS } from './project.ts'
-import { downloadText } from './clientSafety.ts'
+import { previewDocument, previewEntry } from './preview.ts'
+import { zipFiles } from './zip.ts'
+import { downloadBlob, downloadText } from './clientSafety.ts'
 
 export default function ProjectPane({ project, onChange, busy, onNotice }: { project: Project; onChange: (project: Project) => void; busy: boolean; onNotice: (message: string) => void }) {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -14,13 +16,19 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
   const [newPath, setNewPath] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
+  const [preview, setPreview] = useState(false)
   const [imported, setImported] = useState<{ project: Project; skipped: string[] } | null>(null)
   const file = project.files.find(file => file.path === project.activeFile)
+  const entry = previewEntry(project)
   const selected = project.files.filter(file => file.selected).length
   const characters = contextCharacters(project)
   function updateFile(path: string, update: (file: ProjectFile) => ProjectFile) {
     try { onChange(normaliseProject({ ...project, files: project.files.map(file => file.path === path ? update(file) : file) })); setError('') }
     catch (error) { setError(error instanceof Error ? error.message : 'The project could not be updated.') }
+  }
+  function removeFile(path: string) {
+    try { onChange(normaliseProject({ ...project, files: project.files.filter(file => file.path !== path) })); setError('') }
+    catch (error) { setError(error instanceof Error ? error.message : 'The file could not be removed.') }
   }
   async function importFiles(list: FileList | null) {
     if (!list?.length) return
@@ -36,8 +44,12 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
     <header className="shrink-0 border-b border-secondary p-xl">
       <div className="flex items-center justify-between gap-md"><div className="min-w-0"><h2 className="truncate text-sm font-medium" title={project.name}>{project.name}</h2><p className="mt-xs text-xs text-tertiary">Browser project</p></div><div className="flex shrink-0 items-center">
         <IconButton label="Add a browser file" disabled={busy || importing} onClick={() => setNewPath('')}><Plus size={16} className="shrink-0" aria-hidden="true" /></IconButton>
-        <IconButton label="Export browser project as JSON" disabled={busy} onClick={() => {
-          try { downloadText('recallloop-project.json', JSON.stringify(normaliseProject(project), null, 2), 'application/json') }
+        <IconButton label="Preview this project offline" disabled={busy || importing || !entry} title={entry ? `Preview ${entry}` : 'Import or add an HTML file to preview'} onClick={() => setPreview(true)}><Monitor size={16} className="shrink-0" aria-hidden="true" /></IconButton>
+        <IconButton label="Download this project as a zip file" disabled={busy || importing} onClick={() => {
+          try {
+            const clean = normaliseProject(project)
+            downloadBlob(`${clean.name.replace(/\s+/g, '-').toLowerCase() || 'recallloop-project'}.zip`, zipFiles(clean.files.map(({ path, content }) => ({ path, content }))))
+          }
           catch (error) { setError(error instanceof Error ? error.message : 'Project export failed.') }
         }}><Download size={16} className="shrink-0" aria-hidden="true" /></IconButton>
       </div></div>
@@ -45,7 +57,7 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
         <Button size="sm" disabled={busy || importing} onClick={() => folderInput.current?.click()}><FolderOpen size={14} className="shrink-0" aria-hidden="true" />Import folder</Button>
         <Button size="sm" aria-label="Import text files" disabled={busy || importing} onClick={() => fileInput.current?.click()}><Upload size={14} className="shrink-0" aria-hidden="true" />Import files</Button>
       </div>
-      <details className="mt-lg text-xs text-tertiary"><summary className="cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Project backups</summary><div className="mt-lg space-y-md"><Button size="sm" disabled={busy || importing} onClick={() => backupInput.current?.click()}><FileCode2 size={14} className="shrink-0" aria-hidden="true" />Load a RecallLoop JSON project</Button><p>Export with the download button above. Loading a backup asks before replacing your browser project.</p></div></details>
+      <details className="mt-lg text-xs text-tertiary"><summary className="cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Project backups</summary><div className="mt-lg space-y-md"><Button size="sm" disabled={busy || importing} onClick={() => backupInput.current?.click()}><FileCode2 size={14} className="shrink-0" aria-hidden="true" />Load a RecallLoop JSON project</Button><p>Export a zip with the download button above; older RecallLoop JSON backups still load here. Loading a backup asks before replacing your browser project.</p></div></details>
       <input ref={fileInput} type="file" multiple className="hidden" onChange={event => { void importFiles(event.target.files) }} />
       <input ref={folderInput} type="file" multiple {...{ webkitdirectory: '' }} className="hidden" onChange={event => { void importFiles(event.target.files) }} />
       <input ref={backupInput} type="file" accept="application/json,.json" className="hidden" onChange={async event => {
@@ -68,6 +80,7 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
         <Checkbox checked={item.selected} disabled={busy} onChange={selected => updateFile(item.path, file => ({ ...file, selected }))}><span className="sr-only">Share {item.path} with model</span></Checkbox>
         <button type="button" disabled={busy} aria-current={item.path === project.activeFile ? 'true' : undefined} className="flex min-w-0 flex-1 items-center gap-md rounded-md py-lg text-left font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
           title={item.path} onClick={() => onChange({ ...project, activeFile: item.path })}><FileCode2 size={13} className="shrink-0 text-fg-tertiary" aria-hidden="true" /><span className="truncate">{item.path}</span></button>
+        <IconButton label={`Remove ${item.path} from this project`} disabled={busy || importing} onClick={() => removeFile(item.path)}><X size={14} className="shrink-0" aria-hidden="true" /></IconButton>
       </div>)}
     </div>
     {newPath !== null && <form className="shrink-0 border-b border-secondary p-lg" onSubmit={event => {
@@ -98,7 +111,7 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
             const content = file.content.slice(0, start) + '  ' + file.content.slice(end)
             if (content.length <= MAX_FILE_CHARS) { updateFile(file.path, item => ({ ...item, content })); requestAnimationFrame(() => editor.current?.setSelectionRange(start + 2, start + 2)) }
           }
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); onNotice('Edits are cached in this browser. Download a file, project JSON, or reviewed patch to save work on disk.') }
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); onNotice('Edits are cached in this browser. Download a file, project zip, or reviewed patch to save work on disk.') }
         }} />
     </div>
     <footer className="shrink-0 border-t border-secondary bg-secondary p-xl">
@@ -110,6 +123,13 @@ export default function ProjectPane({ project, onChange, busy, onNotice }: { pro
     </>}>
       <p className="text-sm text-secondary">The current browser project will be replaced with “{imported.project.name}”. Export your current edits first if you need them. Nothing is written to disk or sent to a model until you submit a chat turn.</p>
       {imported.skipped.length > 0 && <p className="mt-lg text-xs text-warning-primary">Skipped {imported.skipped.length} unsafe, binary, oversized, duplicate, or over-limit files. {imported.skipped.slice(0, 5).join(', ')}{imported.skipped.length > 5 ? '…' : ''}</p>}
+    </Modal>}
+    {preview && <Modal title="Offline project preview" onClose={() => setPreview(false)} footer={<Button onClick={() => setPreview(false)}>Done</Button>}>
+      <p className="text-sm text-secondary">Local HTML/CSS/JS/SVG files run inside an isolated frame: scripts execute, but the preview has no access to this app, cookies, storage, or the network. External and missing references are removed; nothing is uploaded, executed on a server, or written to disk.</p>
+      {(() => {
+        const previewHtml = previewDocument(project)
+        return previewHtml ? <iframe title={`Offline preview of ${project.name}`} sandbox="allow-scripts" srcDoc={previewHtml} className="mt-lg h-96 w-full rounded-lg border border-secondary bg-primary" /> : <p className="mt-lg text-sm text-warning-primary">No entry HTML file (for example index.html) was found in this project.</p>
+      })()}
     </Modal>}
   </div>
 }

@@ -1,6 +1,6 @@
 import { test, expect } from './harness.mjs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { installWallet, signIn, demo, send, setCapture, newSession, openPanel, openSettings, chooseProviderModel, leaveSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
+import { installWallet, signIn, demo, send, setCapture, newSession, openPanel, openSettings, chooseProviderModel, leaveSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors, addProjectFile } from './helpers.mjs'
 import { installConnectionFixture, SYNTHETIC_ACCOUNT_ID } from './fixtures.mjs'
 import { workspaceHttp, deferred } from '../tests/helpers/workspace-http.mjs'
 import { createLlm } from '../server/agent/llm.mjs'
@@ -43,10 +43,12 @@ test('signed wallet onboarding and credential forms keep secrets out of browser 
   ])
   await settings.getByRole('button', { name: 'Done', exact: true }).click()
   await openPanel(page)
-  const editor = page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })
+  const editor = await addProjectFile(page)
   await editor.fill(`// Accidentally pasted keys: ${Object.values(keys).join(' ')}\n`)
   await expect(editor).toHaveValue('// Accidentally pasted keys: [REDACTED] [REDACTED] [REDACTED]\n')
-  const exported = await downloadedText(page, () => page.getByRole('button', { name: 'Export browser project as JSON' }).click())
+  const exported = await downloadedText(page, () => page.getByRole('button', { name: 'Download this project as a zip file' }).click())
+  expect(exported.name).toBe('recallloop-project.zip')
+  expect(exported.text.startsWith('PK\u0003\u0004')).toBe(true)
   for (const key of Object.values(keys)) {
     expect(exported.text).not.toContain(key)
     expect(JSON.stringify(await cachedValues(page))).not.toContain(key)
@@ -87,8 +89,14 @@ test('offline recall loop proposes reviewable code, downloads exact changes, and
   await page.screenshot({ path: testInfo.outputPath('applied-browser-files-desktop-dark.png') })
   const file = await downloadedText(page, () => page.getByRole('button', { name: 'Download current file', exact: true }).click())
   expect(file.text).toBe(after)
-  const backup = await downloadedText(page, () => page.getByRole('button', { name: 'Export browser project as JSON' }).click())
-  expect(JSON.parse(backup.text).files.find(file => file.path === 'src/greet.ts').content).toBe(after)
+  const backup = await downloadedText(page, () => page.getByRole('button', { name: 'Download this project as a zip file' }).click())
+  expect(backup.name).toBe('recallloop-sandbox.zip')
+  expect(backup.text.startsWith('PK\u0003\u0004')).toBe(true)
+  expect(backup.text).toContain(after) // STORE-method archive keeps file content verbatim
+  // Applied proposals can leave the queue without reverting the applied edit.
+  await page.getByRole('tab', { name: 'Review', exact: true }).click()
+  await page.getByRole('button', { name: 'Remove from queue', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'No changes to review', exact: true })).toBeVisible()
   await answer.getByRole('button', { name: 'Record outcome', exact: true }).click()
   const feedback = page.getByRole('dialog', { name: 'Teach the next session', exact: true })
   await feedback.getByRole('textbox', { name: 'Your outcome or correction' }).fill('TypeScript lesson: keep npm changes small and add a regression test for missing names.')
@@ -138,15 +146,21 @@ test('browser-only import/export, safe paths, cache reload, and editor keyboard 
   await editor.press('Escape')
   await editor.press('Tab')
   await expect(editor).not.toBeFocused()
-  const exported = await downloadedText(page, () => page.getByRole('button', { name: 'Export browser project as JSON' }).click())
+  const exported = await downloadedText(page, () => page.getByRole('button', { name: 'Download this project as a zip file' }).click())
+  expect(exported.name.endsWith('.zip')).toBe(true)
+  expect(exported.text.startsWith('PK\u0003\u0004')).toBe(true)
   await page.getByText('Project backups', { exact: true }).click()
   const load = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: 'Load a RecallLoop JSON project' }).click()
-  await (await load).setFiles({ name: 'recallloop-project.json', mimeType: 'application/json', buffer: Buffer.from(exported.text) })
+  // Older JSON backups still import; the zip is for handoff to a real environment.
+  await (await load).setFiles({ name: 'recallloop-project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ name: 'RecallLoop sandbox', activeFile: 'src/second.ts', files: [{ path: 'hello.ts', content: 'export const hello = "hello"\n' }, { path: 'src/second.ts', content: 'const answer = 42\n' }] })) })
   await page.getByRole('dialog').getByRole('button', { name: 'Import 2 files', exact: true }).click()
   await page.reload()
   await openPanel(page)
   await expect(page.getByRole('textbox', { name: 'Edit src/second.ts', exact: true })).toHaveValue('const answer = 42\n')
+  // Per-file removal drops a file without touching the rest.
+  await page.getByRole('button', { name: 'Remove src/second.ts from this project' }).click()
+  await expect(page.getByRole('textbox', { name: 'Edit src/second.ts', exact: true })).toHaveCount(0)
   expect(JSON.stringify(await cachedValues(page))).not.toContain('NEVER_IMPORT')
   checkErrors()
 })
@@ -196,8 +210,9 @@ test('cross-tab wallet notifications clear stale work, reject old requests, and 
   await installWallet(page, [a])
   await signIn(page)
   await openPanel(page)
-  const initialFile = await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).inputValue()
-  await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).fill('// ONLY_WALLET_A\n')
+  await addProjectFile(page) // wallet workspaces start blank; seed a file for scope checks
+  const editor = page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })
+  await editor.fill('// ONLY_WALLET_A\n')
   await openSettings(page, 'Advanced')
   await page.getByRole('dialog').getByRole('button', { name: 'Use scripted mock model', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Done', exact: true }).click()
@@ -219,7 +234,8 @@ test('cross-tab wallet notifications clear stale work, reject old requests, and 
   expect(stale.data.code).toBe('session_changed')
   await expect(page.getByRole('combobox', { name: 'Model for this turn' })).toHaveValue('')
   await openPanel(page)
-  await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).not.toHaveValue('// ONLY_WALLET_A\n')
+  await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Import a folder or add a file to start coding.', { exact: true })).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Message RecallLoop' })).toHaveValue('')
   await expect(page.locator('article')).toHaveCount(0)
   expect(JSON.stringify(await cachedValues(page))).not.toContain('ONLY_WALLET_A')
@@ -234,7 +250,10 @@ test('cross-tab wallet notifications clear stale work, reject old requests, and 
   await leaveSession(page)
   await signIn(page)
   await openPanel(page)
-  await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).toHaveValue(initialFile)
+  // Re-signing the same wallet after a clean logout starts a blank workspace,
+  // not the logged-out workspace's files.
+  await expect(page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Import a folder or add a file to start coding.', { exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Model for this turn' })).toHaveValue('')
   await expect(page.getByRole('textbox', { name: 'Message RecallLoop' })).toHaveValue('')
   checkErrors()

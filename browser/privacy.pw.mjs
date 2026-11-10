@@ -1,6 +1,6 @@
 import { test, expect } from './harness.mjs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { installWallet, signIn, demo, send, setCapture, openPanel, openSettings, leaveSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
+import { installWallet, signIn, demo, send, setCapture, openPanel, openSettings, leaveSession, downloadedText, cachedValues, holdCacheTimers, failOnPageErrors, addProjectFile } from './helpers.mjs'
 import { installConnectionFixture, SYNTHETIC_ACCOUNT_ID } from './fixtures.mjs'
 import { memoryNamespace } from '../server/memory/memwal-client.mjs'
 import { MEMORY_GUIDES } from '../server/agent/memory-handoff.mjs'
@@ -120,8 +120,7 @@ test('a cross-tab auth notification clears old data even when the next session c
   await installWallet(page)
   await signIn(page)
   const old = await authSession(page)
-  await openPanel(page)
-  await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).fill('// OLD_WALLET_NETWORK_FAILURE\n')
+  await addProjectFile(page, 'src/greet.ts', '// OLD_WALLET_NETWORK_FAILURE\n')
   await page.getByRole('textbox', { name: 'Message RecallLoop' }).fill('OLD_WALLET_UNSENT_DRAFT')
   await page.evaluate(() => {
     window.dispatchEvent(new Event('pagehide'))

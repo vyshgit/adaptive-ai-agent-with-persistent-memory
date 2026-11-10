@@ -114,6 +114,18 @@ export async function demo(page) {
   await expect(page.getByRole('combobox', { name: 'Model for this turn' })).toHaveValue('recallloop-mock')
 }
 
+// Wallet workspaces start with a blank project; tests that need a file add it through the UI.
+export async function addProjectFile(page, path = 'src/greet.ts', content = '') {
+  const region = await openPanel(page)
+  await region.getByRole('button', { name: 'Add a browser file', exact: true }).click()
+  await page.getByRole('textbox', { name: 'New relative file path' }).fill(path)
+  await page.getByRole('button', { name: 'Add file', exact: true }).click()
+  const editor = page.getByRole('textbox', { name: `Edit ${path}`, exact: true })
+  await expect(editor).toBeVisible()
+  if (content) await editor.fill(content)
+  return editor
+}
+
 export async function send(page, text) {
   await page.getByRole('textbox', { name: 'Message RecallLoop' }).fill(text)
   await page.getByRole('button', { name: 'Send', exact: true }).click()

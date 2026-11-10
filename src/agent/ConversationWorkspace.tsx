@@ -32,7 +32,7 @@ export default function ConversationWorkspace({ status, overview, chain, loading
   stopTask: MutableRefObject<(() => void) | null>
   preferences: WorkspacePreferences; onPreferences: UpdatePreferences
 }) {
-  const [project, setProject] = useState(() => loadProject(cache.storage, cache.scope))
+  const [project, setProject] = useState(() => loadProject(cache.storage, cache.scope, demo))
   const currentProject = useRef(project)
   currentProject.current = project
   const connections = availableConnections(status.llm, status.modelConnections)
@@ -119,7 +119,10 @@ export default function ConversationWorkspace({ status, overview, chain, loading
         <div className="flex shrink-0 items-center border-b border-secondary"><div className="min-w-0 flex-1"><Tabs value={panel} onChange={showPanel} id={tabsId} label="Workspace panels" tabs={[{ id: 'project', label: 'Files' }, { id: 'review', label: `Review${pending ? ` (${pending})` : ''}` }, { id: 'memory', label: 'Memory' }]} /></div><IconButton label="Close workspace panel" className="mr-sm" onClick={closePanel}><X size={16} aria-hidden="true" /></IconButton></div>
         <div key={panel} role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${panel}`} className="workspace-detail-enter min-h-0 flex-1">
           {panel === 'project' ? <ProjectPane project={project} onChange={setProject} busy={busy} onNotice={onNotice} />
-            : panel === 'review' ? <ReviewPane proposals={proposals} project={project} busy={busy} onApply={review} onReject={proposal => { agent.reviewProposal(proposal.id, 'rejected'); onNotice(`Rejected ${proposal.path}. The project is unchanged.`) }} />
+            : panel === 'review' ? <ReviewPane proposals={proposals} project={project} busy={busy} onApply={review}
+              onReject={proposal => { agent.reviewProposal(proposal.id, 'rejected'); onNotice(`Rejected ${proposal.path}. The project is unchanged.`) }}
+              onDismiss={proposal => { agent.dismissProposal(proposal.id); onNotice(`Removed ${proposal.path} from the review queue. The browser project is unchanged.`) }}
+              onClear={() => { agent.clearProposals(); onNotice('The review queue is empty. Applied browser edits stay in place; nothing was reverted.') }} />
               : <MemoryRail overview={overview} loading={memoryLoading} busy={busy} chain={chain} handoffAccountId={!demo && status.memoryConnection?.verified ? status.memoryConnection.accountId : null} onRefresh={onMemoryRefresh} onChain={onChainRefresh} onNotice={onNotice} onSettings={() => onSettings('walrus')} />}
         </div>
       </aside>

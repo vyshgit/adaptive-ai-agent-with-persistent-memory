@@ -1,5 +1,5 @@
 import { test, expect } from './harness.mjs'
-import { installWallet, signIn, demo, openPanel, openSettings, newSession, failOnPageErrors } from './helpers.mjs'
+import { installWallet, signIn, demo, openPanel, openSettings, newSession, failOnPageErrors, addProjectFile } from './helpers.mjs'
 
 const withinViewport = async (locator, width, height) => {
   const box = await locator.boundingBox()
@@ -149,6 +149,8 @@ test('onboarding, short-height composer, panels and connection dialogs remain re
   await page.screenshot({ path: testInfo.outputPath('wallet-onboarding-mobile-dark.png'), fullPage: true })
   await page.getByRole('button', { name: 'Connect Wallet', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Wallet session details', exact: true })).toBeVisible()
+  await addProjectFile(page) // wallet workspaces start blank; seed the editor checked below
+  await page.getByRole('button', { name: 'Close workspace panel', exact: true }).click()
   for (const { width, height } of [{ width: 320, height: 480 }, { width: 390, height: 600 }, { width: 768, height: 500 }, { width: 1024, height: 600 }, { width: 1440, height: 800 }]) {
     await page.setViewportSize({ width, height })
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)

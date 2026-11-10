@@ -11,7 +11,7 @@ function storage() {
   return { data, getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }
 }
 const message = overrides => ({ id: 'message-one', role: 'assistant', content: 'A response', createdAt: '2026-11-08T10:00:00Z', status: 'complete', ...overrides })
-const proposal = overrides => ({ id: 'proposal-one', path: 'src/greet.ts', before: starterProject().files[0].content,
+const proposal = overrides => ({ id: 'proposal-one', path: 'src/greet.ts', before: starterProject(true).files[0].content,
   after: 'export const greeting = "Hello"\n', reason: 'Synthetic test change', baseHash: 'test-hash', status: 'pending', ...overrides })
 
 test('browser session/project caches are wallet-scoped and do not migrate an unscoped cache into a wallet', t => {
@@ -19,7 +19,7 @@ test('browser session/project caches are wallet-scoped and do not migrate an uns
   const cache = storage(), session = createSession()
   session.messages.push(message())
   assert.equal(saveSessions([session], cache, 'wallet-first'), true)
-  assert.equal(saveProject(starterProject(), cache, 'wallet-first'), true)
+  assert.equal(saveProject(starterProject(true), cache, 'wallet-first'), true)
   assert.equal(loadSessions(cache, 'wallet-first').sessions.length, 1)
   assert.equal(loadSessions(cache, 'wallet-second').sessions.length, 0)
   cache.setItem(SESSION_KEY, JSON.stringify({ version: 2, sessions: [session] }))
@@ -55,7 +55,7 @@ test('cache-exit flushing preserves redaction and wallet scopes without reviving
   const page = new EventTarget(), visibility = Object.assign(new EventTarget(), { visibilityState: 'visible' })
   const cache = storage(), key = 'synthetic-cache-exit-secret-value'
   registerBrowserSecret(key)
-  const firstProject = starterProject(), firstSession = createSession()
+  const firstProject = starterProject(true), firstSession = createSession()
   firstProject.files[0].content = key
   firstSession.messages = [message({ content: key })]
   const closeFirst = flushCacheOnExit(() => {
@@ -72,14 +72,14 @@ test('cache-exit flushing preserves redaction and wallet scopes without reviving
   assert.ok(savedSession.includes('[REDACTED]'))
   clearBrowserSecrets()
   firstProject.files[0].content = 'A disposed wallet must not save this later change.'
-  const secondProject = starterProject(), secondSession = createSession()
+  const secondProject = starterProject(true), secondSession = createSession()
   secondProject.files[0].content = 'Second wallet only.'
   const closeSecond = flushCacheOnExit(() => {
     saveProject(secondProject, cache, 'wallet-second')
     saveSessions([secondSession], cache, 'wallet-second')
   }, page, visibility)
   page.dispatchEvent(new Event('pagehide'))
-  assert.equal(loadProject(cache, 'wallet-second').files[0].content, 'Second wallet only.')
+  assert.equal(loadProject(cache, "wallet-second", true).files[0].content, 'Second wallet only.')
   assert.equal(cache.getItem(firstProjectKey), savedProject)
   assert.equal(cache.getItem(firstSessionKey), savedSession)
   closeSecond()
@@ -109,7 +109,7 @@ test('browser caches redact credentials in content and metadata before truncatio
   assert.equal(restored.proposals.length, 1)
   assert.equal(restored.proposals[0].after, '[REDACTED]')
   assert.equal(restored.memory.memories[0].text, '')
-  const project = starterProject()
+  const project = starterProject(true)
   project.name = `${'n'.repeat(75)}${key}`
   project.files[0].content = key
   assert.equal(saveProject(project, cache, 'wallet-first'), true)
@@ -135,8 +135,8 @@ test('corrupt, oversized and unsupported-version browser caches reset without cr
   const blocked = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('quota') }, removeItem() { throw new Error('blocked') } }
   assert.equal(loadSessions(blocked).sessions.length, 0)
   assert.equal(saveSessions([], blocked), false)
-  assert.equal(saveProject(starterProject(), blocked), false)
-  assert.equal(loadProject(blocked).name, 'RecallLoop sandbox')
+  assert.equal(saveProject(starterProject(true), blocked), false)
+  assert.equal(loadProject(blocked).name, 'RecallLoop project')
 })
 
 test('session counts/messages/quota are bounded, interrupted messages are stopped, and malformed nested entries are ignored', () => {
@@ -174,7 +174,7 @@ test('project validation rejects traversal, secret files, duplicate paths, binar
     assert.throws(() => normaliseProject({ files }), /files/)
   }
   assert.throws(() => normaliseProject({ files: Array.from({ length: 31 }, (_, i) => ({ path: `${i}.ts`, content: 'x'.repeat(20_000) })) }), /600,000/)
-  const project = starterProject()
+  const project = starterProject(true)
   project.files[0].selected = false
   assert.equal(selectedProject(project).files.some(file => file.path === 'src/greet.ts'), false)
 })
@@ -203,7 +203,7 @@ test('text-file import preserves safe relative paths, skips binary/secret/oversi
 })
 
 test('proposal application is browser-only, requires an unchanged preimage, and rejects unsafe/oversized changes', () => {
-  const project = starterProject(), change = proposal()
+  const project = starterProject(true), change = proposal()
   const changed = applyProposal(project, change)
   assert.equal(changed.files[0].content, change.after)
   assert.notEqual(project.files[0].content, change.after)

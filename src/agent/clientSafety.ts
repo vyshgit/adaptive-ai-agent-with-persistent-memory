@@ -52,7 +52,11 @@ export function flushCacheOnExit(flush: () => void, page: EventTarget = window,
 }
 
 export function downloadText(name: string, content: string, type = 'text/plain') {
-  const url = URL.createObjectURL(new Blob([content], { type }))
+  downloadBlob(name, new Blob([content], { type }))
+}
+
+export function downloadBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = name

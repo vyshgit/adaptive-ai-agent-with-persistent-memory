@@ -17,14 +17,14 @@ test('default browser caches use tab session storage and never load persistent l
   const descriptors = Object.fromEntries(['sessionStorage', 'localStorage'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   t.after(() => { for (const [key, descriptor] of Object.entries(descriptors)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] } })
   const tab = storage(), persistent = storage(), scope = workspaceCacheScope(a, tagA)
-  const project = starterProject()
+  const project = starterProject(true)
   project.files[0].content = 'OLD_PERSISTENT_PRIVATE_PROJECT'
   saveProject(project, persistent, scope)
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: tab })
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: persistent })
   assert.equal(browserStorage(), tab)
-  assert.equal(loadProject(undefined, scope).files[0].content.includes('OLD_PERSISTENT'), false)
-  assert.equal(saveProject(starterProject(), undefined, scope), true)
+  assert.equal(loadProject(undefined, scope, true).files[0].content.includes('OLD_PERSISTENT'), false)
+  assert.equal(saveProject(starterProject(true), undefined, scope), true)
   assert.equal(tab.data.size, 1)
   assert.equal(persistent.data.size, 1)
   assert.match(persistent.getItem(scopedCacheKey(PROJECT_KEY, scope)), /OLD_PERSISTENT/)
@@ -32,7 +32,7 @@ test('default browser caches use tab session storage and never load persistent l
 
 test('workspace leases are wallet/login-scoped, reloadable in the same login, and cannot read or write another scope', () => {
   const tab = storage(), cache = createWorkspaceCache(a, tagA, tab)
-  const session = createSession(), project = starterProject()
+  const session = createSession(), project = starterProject(true)
   session.title = 'USER_A_PRIVATE_CHAT'
   project.files[0].content = 'USER_A_PRIVATE_PROJECT'
   assert.equal(saveSessions([session], cache.storage, cache.scope), true)
@@ -42,7 +42,7 @@ test('workspace leases are wallet/login-scoped, reloadable in the same login, an
   assert.equal(loadProject(reload.storage, reload.scope).files[0].content, 'USER_A_PRIVATE_PROJECT')
   for (const next of [createWorkspaceCache(a, tagB, tab), createWorkspaceCache(b, tagA, tab)]) {
     assert.equal(loadSessions(next.storage, next.scope).sessions.length, 0)
-    assert.equal(loadProject(next.storage, next.scope).files[0].content.includes('USER_A_PRIVATE'), false)
+    assert.equal(loadProject(next.storage, next.scope, true).files[0].content.includes('USER_A_PRIVATE'), false)
     assert.equal(next.storage.getItem(scopedCacheKey(SESSION_KEY, cache.scope)), null)
     assert.throws(() => next.storage.setItem(scopedCacheKey(PROJECT_KEY, cache.scope), 'FORGED_WRITE'))
   }
@@ -53,13 +53,13 @@ test('workspace leases are wallet/login-scoped, reloadable in the same login, an
 test('logout revocation wins over pending autosave, pagehide, hidden visibility, and React teardown flushing', () => {
   const tab = storage(), cache = createWorkspaceCache(a, tagA, tab), other = createWorkspaceCache(b, tagB, tab)
   const page = new EventTarget(), visibility = Object.assign(new EventTarget(), { visibilityState: 'hidden' })
-  const session = createSession(), project = starterProject()
+  const session = createSession(), project = starterProject(true)
   session.title = 'PRIVATE_BEFORE_LOGOUT'
   project.files[0].content = 'PRIVATE_BEFORE_LOGOUT'
   const lateAutosave = () => { saveSessions([session], cache.storage, cache.scope); saveProject(project, cache.storage, cache.scope) }
   const unmount = flushCacheOnExit(lateAutosave, page, visibility)
   lateAutosave()
-  saveProject(starterProject(), other.storage, other.scope)
+  saveProject(starterProject(true), other.storage, other.scope)
   assert.equal(cache.revoke(), true)
   assert.equal(cache.active, false)
   session.title = 'MUST_NOT_RESURRECT'
@@ -77,9 +77,9 @@ test('logout revocation wins over pending autosave, pagehide, hidden visibility,
 
 test('expired or changed logins prune only inactive login-tagged caches, including after a reload', () => {
   const tab = storage(), cache = createWorkspaceCache(a, tagA, tab), next = createWorkspaceCache(b, tagB, tab)
-  saveProject(starterProject(), cache.storage, cache.scope)
+  saveProject(starterProject(true), cache.storage, cache.scope)
   saveSessions([createSession()], cache.storage, cache.scope)
-  saveProject(starterProject(), next.storage, next.scope)
+  saveProject(starterProject(true), next.storage, next.scope)
   tab.setItem('recallloop.theme', 'dark')
   tab.setItem(`${SESSION_KEY}:old-wallet-cache`, 'OLDER_CACHE_NOT_AUTO_MIGRATED')
   tab.setItem(`unrelated.app:${cache.scope}`, 'UNRELATED_DATA')
@@ -96,7 +96,7 @@ test('explicit legacy cleanup inspects names only and leaves current tab work, t
   persistent.setItem('recallloop.theme', 'light')
   persistent.setItem('another-app.private-data', 'UNRELATED_PRIVATE_CONTENT')
   persistent.getItem = () => assert.fail('Cleanup must never inspect old cache content')
-  saveProject(starterProject(), cache.storage, cache.scope)
+  saveProject(starterProject(true), cache.storage, cache.scope)
   assert.equal(legacyWorkspaceCacheKeys(persistent).length, 4)
   assert.deepEqual(clearLegacyWorkspaceCaches(persistent), { removed: 4, failed: false })
   assert.deepEqual([...persistent.data.keys()], ['recallloop.theme', 'another-app.private-data'])
@@ -108,7 +108,7 @@ test('blocked cache removal reports failure but never re-enables a revoked stora
   assert.equal(cache.revoke(), false)
   assert.equal(cache.active, false)
   assert.equal(saveSessions([createSession()], cache.storage, cache.scope), false)
-  assert.equal(saveProject(starterProject(), cache.storage, cache.scope), false)
+  assert.equal(saveProject(starterProject(true), cache.storage, cache.scope), false)
   const persistent = storage()
   persistent.setItem(SESSION_KEY, 'private')
   persistent.removeItem = () => { throw new Error('blocked') }

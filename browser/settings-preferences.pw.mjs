@@ -1,5 +1,5 @@
 import { test, expect } from './harness.mjs'
-import { installWallet, signIn, openSettings, chooseProviderModel, cachedValues, failOnPageErrors, openPanel } from './helpers.mjs'
+import { installWallet, signIn, openSettings, chooseProviderModel, cachedValues, failOnPageErrors, addProjectFile } from './helpers.mjs'
 import { installConnectionFixture, SYNTHETIC_ACCOUNT_ID, syntheticConnection } from './fixtures.mjs'
 import { PREFERENCES_KEY } from '../src/agent/workspacePreferences.ts'
 
@@ -89,8 +89,7 @@ test('each provider remembers its own base and protocol without carrying a key o
 test('forgetting remembered fields clears only setup preferences, not open inputs, browser files or active connections', async ({ page }) => {
   const checkErrors = failOnPageErrors(page)
   await installWallet(page); await signIn(page)
-  await openPanel(page)
-  await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).fill('// PRIVATE_PROJECT_NOT_SETUP\n')
+  await addProjectFile(page, 'src/greet.ts', '// PRIVATE_PROJECT_NOT_SETUP\n')
   await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
   const fixture = await installConnectionFixture(page)
   const settings = await openSettings(page)

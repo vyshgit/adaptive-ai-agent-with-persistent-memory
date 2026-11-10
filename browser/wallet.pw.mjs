@@ -1,6 +1,6 @@
 import { test, expect } from './harness.mjs'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { installWallet, signIn, openPanel, deferred, cachedValues, holdCacheTimers, failOnPageErrors } from './helpers.mjs'
+import { installWallet, signIn, openPanel, deferred, cachedValues, holdCacheTimers, failOnPageErrors, addProjectFile } from './helpers.mjs'
 
 test('wallet connection, personal-message signing and ownership verification have distinct progress states', async ({ page }) => {
   const checkErrors = failOnPageErrors(page)
@@ -81,8 +81,7 @@ test('disconnect reports server failures inside the wallet dialog and ends the s
     observedSessions.push(await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json()))
   } })
   await signIn(page)
-  await openPanel(page)
-  await page.getByRole('textbox', { name: 'Edit src/greet.ts', exact: true }).fill('// PENDING_WALLET_DISCONNECT_PROJECT\n')
+  await addProjectFile(page, 'src/greet.ts', '// PENDING_WALLET_DISCONNECT_PROJECT\n')
   await page.evaluate(() => { window.recallloopWalletBehavior.disconnectError = 'Synthetic extension permission removal declined.' })
   const secondRequest = deferred(), release = deferred()
   let attempts = 0

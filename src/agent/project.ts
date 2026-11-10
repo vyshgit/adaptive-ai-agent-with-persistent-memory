@@ -15,7 +15,12 @@ export function validFilePath(value: string) {
     && !/\.(pem|key|p12|pfx)$/i.test(path)
 }
 
-export function starterProject(): Project {
+export function blankProject(): Project {
+  return { name: 'RecallLoop project', activeFile: null, files: [] }
+}
+
+export function starterProject(demo = false): Project {
+  if (!demo) return blankProject()
   return { name: 'RecallLoop sandbox', activeFile: 'src/greet.ts', files: [
     { path: 'src/greet.ts', content: 'export function greet(name: string) {\n  return `Hello, ${name.trim()}!`\n}\n', selected: true },
     { path: 'src/greet.test.ts', content: "import test from 'node:test'\nimport assert from 'node:assert/strict'\nimport { greet } from './greet.ts'\n\ntest('greets a named person', () => {\n  assert.equal(greet(' Ada '), 'Hello, Ada!')\n})\n\ntest('falls back for an empty name', () => {\n  assert.equal(greet(''), 'Hello, friend!')\n})\n", selected: true },
@@ -42,11 +47,11 @@ export function normaliseProject(raw: unknown): Project {
     activeFile: typeof input.activeFile === 'string' && paths.has(input.activeFile) ? input.activeFile : files[0]?.path || null }
 }
 
-export function loadProject(storage: CacheStorage | null = browserStorage(), scope = 'offline'): Project {
+export function loadProject(storage: CacheStorage | null = browserStorage(), scope = 'offline', demo = false): Project {
   try {
     const raw = storage?.getItem(scopedCacheKey(PROJECT_KEY, scope))
-    return raw ? normaliseProject(JSON.parse(raw)) : starterProject()
-  } catch { return starterProject() }
+    return raw ? normaliseProject(JSON.parse(raw)) : starterProject(demo)
+  } catch { return starterProject(demo) }
 }
 
 export function saveProject(project: Project, storage: CacheStorage | null = browserStorage(), scope = 'offline') {
