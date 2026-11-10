@@ -58,16 +58,16 @@ export default function ChatPane(props: Props) {
       const node = scroll.current
       if (node) following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 120
     }}>
-      {!props.session.messages.length ? <div className="workspace-enter mx-auto flex w-full max-w-2xl flex-col gap-3xl px-xl py-4xl sm:p-4xl lg:py-6xl">
-        <div className="flex flex-col items-start gap-xl"><span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-secondary bg-secondary"><Layers2 size={21} className="shrink-0 text-fg-secondary" aria-hidden="true" /></span>
-          <div><h3 className="text-heading-xs font-semibold">Where should we start?</h3><p className="mt-lg text-sm leading-relaxed text-secondary">Pick up an idea, plan something, or review a code change. Relevant memories come first; missing details get a question, not a guess. You stay in control.</p></div>
+      {!props.session.messages.length ? <div className="workspace-enter mx-auto flex w-full max-w-2xl flex-col gap-xl px-xl py-3xl sm:p-3xl lg:py-4xl">
+        <div className="flex flex-col items-start gap-md"><span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-secondary bg-secondary"><Layers2 size={21} className="shrink-0 text-fg-secondary" aria-hidden="true" /></span>
+          <div><h3 className="text-heading-xs font-semibold">Where should we start?</h3><p className="mt-md text-sm text-secondary">Pick up an idea, plan something, or review a code change. Relevant memories come first; missing details get a question, not a guess.</p></div>
         </div>
-        {!props.canSend && <div><Button primary onClick={props.onSettings}>Connect a model</Button><p className="mt-lg text-xs text-tertiary">Your wallet is ready. A model is enough to start; Tatum and Walrus Memory are optional additions.</p></div>}
+        {!props.canSend && <div><Button primary onClick={props.onSettings}>Connect a model</Button><p className="mt-md text-xs text-tertiary">A model is enough to start; Tatum and Walrus Memory are optional.</p></div>}
         <div className="divide-y divide-secondary border-y border-secondary">{suggestions.map(item => <div key={item.title}><button type="button" onClick={() => { setDraft(item.prompt); props.onMode(item.mode) }}
           className="workspace-control flex w-full items-center justify-between gap-lg rounded-md border border-transparent px-lg py-xl text-left hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
           <div className="min-w-0"><span className="text-sm font-medium">{item.title}</span><p className="mt-xs text-xs text-tertiary">{item.hint}</p></div><ArrowUpRight size={15} className="shrink-0 text-fg-tertiary" aria-hidden="true" />
         </button></div>)}</div>
-        <p className="text-xs leading-relaxed text-tertiary">History and files use this login’s tab cache. Auto-memory saves relevant user context to connected Walrus memory; raw chat needs a separate choice. The relayer processes plaintext. Turn auto-memory off below whenever you need.</p>
+        <p className="text-xs text-tertiary">History uses this login’s tab cache. Auto-memory saves relevant user context to connected Walrus memory; raw chat needs a separate choice. Turn auto-memory off below whenever you need.</p>
       </div> : props.session.messages.map(message => <Message key={message.id} message={message} busy={props.busy} latest={message === last} onReview={props.onReview} onFeedback={() => props.onFeedback(message)}
         onDraftReply={message === last && props.canSend ? reply => {
           if (reply) setDraft(old => [old, reply].filter(Boolean).join('\n'))
