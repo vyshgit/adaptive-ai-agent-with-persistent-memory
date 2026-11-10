@@ -2,7 +2,7 @@ import { clampNumber } from '../safety.mjs'
 
 export const estimateTokens = text => Math.ceil([...text].length / 4)
 
-export function formatContext(hits, { maxTokens = 800, limit = 8 } = {}) {
+export function formatContext(hits, { maxTokens = 800, limit = 8, preserveOrder = false } = {}) {
   const budget = Math.floor(clampNumber(maxTokens, 800, 64, 4000))
   const cap = Math.floor(clampNumber(limit, 8, 1, 20))
   const unique = new Map()
@@ -13,7 +13,8 @@ export function formatContext(hits, { maxTokens = 800, limit = 8 } = {}) {
       ...(hit.createdAt || hit.created_at ? { createdAt: hit.createdAt || hit.created_at } : {}), tier: hit.tier || 'facts' }
     if (!unique.has(blobId) || unique.get(blobId).distance > memory.distance) unique.set(blobId, memory)
   }
-  const ordered = [...unique.values()].sort((a, b) =>
+  const ordered = [...unique.values()]
+  if (!preserveOrder) ordered.sort((a, b) =>
     (a.tier === 'profile' ? 0 : 1) - (b.tier === 'profile' ? 0 : 1) || a.distance - b.distance)
   const memories = []
   const lines = []

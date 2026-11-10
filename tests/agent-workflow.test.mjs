@@ -17,7 +17,11 @@ const empty = () => ({ context: 'No relevant memories yet.', memories: [], strat
 const fixture = overrides => ({ recall: async () => empty(), ingest: async () => ({ stored: { verbatim: 2, facts: 0, failed: 0 }, blobs: [] }), ...overrides })
 function scripted(script) {
   let round = 0
-  return { async *streamCompletion(request) { yield* script(request, round++) } }
+  return { async *streamCompletion(request) {
+    const events = script(request, round++)
+    yield* events
+    if (!events.some(event => event.type === 'finish')) yield { type: 'finish', reason: events.some(event => event.type === 'tool_call') ? 'tool_calls' : 'stop' }
+  } }
 }
 const answer = events => events.filter(event => event.type === 'delta').map(event => event.data.text).join('')
 function mockMemory(t) {

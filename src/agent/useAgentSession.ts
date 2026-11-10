@@ -5,11 +5,12 @@ import { newId, redactBrowserText, flushCacheOnExit } from './clientSafety.ts'
 import { agentFetch, readAgentSse, responseError } from './api.ts'
 import { selectedProject } from './project.ts'
 import { historyForMessages, normalisePlan, normaliseQuestion } from './workflow.ts'
+import type { WorkspaceCache } from './workspaceCache.ts'
 
-interface SendOptions { model: string; project: Project; capture: boolean; stream: boolean; mode: WorkspaceMode }
+interface SendOptions { model: string; connectionId?: string; project: Project; capture: boolean; captureMode: 'facts' | 'both'; stream: boolean; mode: WorkspaceMode }
 
-export function useAgentSession(onStored: () => void, scope = 'offline') {
-  const [initial] = useState(() => loadSessions(undefined, scope))
+export function useAgentSession(onStored: () => void, cache: WorkspaceCache) {
+  const [initial] = useState(() => loadSessions(cache.storage, cache.scope))
   const [sessions, setSessions] = useState<Session[]>(() => initial.sessions.length ? initial.sessions : [createSession()])
   const [activeId, setActiveId] = useState(() => sessions[0].id)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -22,17 +23,17 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
   storedCallback.current = onStored
 
   useEffect(() => {
-    const timer = setTimeout(() => { if (!saveSessions(sessions, undefined, scope)) setCacheWarning('Local cache could not be saved. Keep this tab open or export your work. Walrus memories are unaffected.') }, 350)
+    const timer = setTimeout(() => { if (cache.active && !saveSessions(sessions, cache.storage, cache.scope)) setCacheWarning('Tab cache could not be saved. Keep this tab open or export your work. Walrus memories are unaffected.') }, 350)
     return () => clearTimeout(timer)
-  }, [sessions, scope])
+  }, [sessions, cache])
   useEffect(() => {
     mounted.current = true
-    const unbind = flushCacheOnExit(() => { saveSessions(current.current, undefined, scope) })
+    const unbind = flushCacheOnExit(() => { if (cache.active) saveSessions(current.current, cache.storage, cache.scope) })
     return () => { mounted.current = false; request.current?.abort(); unbind() }
-  }, [scope])
+  }, [cache])
 
   function updateSession(id: string, update: (session: Session) => Session) {
-    if (!mounted.current) return
+    if (!mounted.current || !cache.active) return
     setSessions(previous => previous.map(session => session.id === id ? update(session) : session).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
   }
   function updateMessage(sessionId: string, messageId: string, update: (message: ChatMessage) => ChatMessage) {
@@ -40,7 +41,7 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
   }
 
   async function send(text: string, options: SendOptions, retryUserId?: string) {
-    if (request.current || !text.trim() || text.length > 4000) return
+    if (!mounted.current || !cache.active || request.current || !text.trim() || text.length > 4000) return
     const session = current.current.find(session => session.id === activeId)
     if (!session) return
     const sessionId = session.id
@@ -59,7 +60,7 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
       messages: [...old.messages, ...(userIndex >= 0 ? [] : [user]), assistant].slice(-MAX_MESSAGES) }))
     let done = false, captured = false
     function event(type: string, raw: unknown) {
-      if (!mounted.current || controller.signal.aborted) return
+      if (!mounted.current || !cache.active || controller.signal.aborted) return
       const incoming = { type, data: raw } as AgentEvent
       if (incoming.type === 'memory') {
         updateMessage(sessionId, assistantId, old => ({ ...old, memory: incoming.data, status: 'streaming' }))
@@ -102,7 +103,7 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
     try {
       const response = await agentFetch('/chat', { method: 'POST', signal: controller.signal,
         body: JSON.stringify({ sessionId, message: user.content, occurredAt: user.createdAt, history,
-          model: options.model, mode: options.mode, project: selectedProject(options.project), capture: options.capture, stream: options.stream }) })
+           model: options.model, connectionId: options.connectionId, mode: options.mode, project: selectedProject(options.project), capture: options.capture, captureMode: options.captureMode, stream: options.stream }) })
       if (!response.ok) throw await responseError(response)
       if (response.headers.get('content-type')?.includes('text/event-stream')) await readAgentSse(response, event, controller.signal)
       else {
@@ -117,9 +118,9 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
         if (data.stored) event('stored', data.stored)
       }
       if (!done) throw new Error('The stream ended before the answer completed. Your partial answer is preserved.')
-      if (!captured) updateMessage(sessionId, assistantId, old => ({ ...old, stored: pendingCapture('The connection closed before capture was confirmed. Refresh memory inventory before retrying.') }))
+      if (!captured) updateMessage(sessionId, assistantId, old => ({ ...old, stored: options.capture ? pendingCapture('The connection closed before capture was confirmed. Refresh memory inventory before retrying.') : skippedCapture() }))
     } catch (error) {
-      if (done) updateMessage(sessionId, assistantId, old => ({ ...old, status: 'complete', stored: old.stored || pendingCapture('Capture confirmation was interrupted. Accepted writes may still complete; refresh inventory.') }))
+      if (done) updateMessage(sessionId, assistantId, old => ({ ...old, status: 'complete', stored: old.stored || (options.capture ? pendingCapture('Capture confirmation was interrupted. Accepted writes may still complete; refresh inventory.') : skippedCapture()) }))
       else updateMessage(sessionId, assistantId, old => ({ ...old, status: controller.signal.aborted ? 'stopped' : 'error',
         error: controller.signal.aborted ? undefined : redactBrowserText(error instanceof Error ? error.message : 'The request failed.'),
         retryable: !controller.signal.aborted && (error as { retryable?: boolean }).retryable !== false,
@@ -131,25 +132,25 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
   }
 
   function newSession() {
-    if (request.current) return
+    if (!cache.active || request.current) return
     const session = createSession()
     setSessions(old => [session, ...old].slice(0, MAX_SESSIONS))
     setActiveId(session.id)
   }
-  function selectSession(id: string) { if (!request.current) setActiveId(id) }
+  function selectSession(id: string) { if (cache.active && !request.current) setActiveId(id) }
   function renameSession(id: string, title: string) {
     if (title.trim()) updateSession(id, old => ({ ...old, title: redactBrowserText(title.trim()).slice(0, 60), updatedAt: new Date().toISOString() }))
   }
   function deleteSession(id: string) {
-    if (request.current) return
+    if (!cache.active || request.current) return
     const remaining = current.current.filter(session => session.id !== id)
     if (!remaining.length) remaining.push(createSession())
     setSessions(remaining)
     if (activeId === id) setActiveId(remaining[0].id)
   }
   function clearCache() {
-    if (request.current) return
-    clearSessionCache(undefined, scope)
+    if (!cache.active || request.current) return
+    clearSessionCache(cache.storage, cache.scope)
     const session = createSession()
     setSessions([session]); setActiveId(session.id)
   }
@@ -163,3 +164,4 @@ export function useAgentSession(onStored: () => void, scope = 'offline') {
 }
 
 function pendingCapture(message: string): StoredCapture { return { verbatim: 0, facts: 0, failed: 0, blobs: [], pending: true, message } }
+function skippedCapture(): StoredCapture { return { verbatim: 0, facts: 0, failed: 0, blobs: [], skipped: true } }

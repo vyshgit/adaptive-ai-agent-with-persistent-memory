@@ -4,6 +4,9 @@ import { buildSystemPrompt } from './prompt.mjs'
 import { createTools } from './tools.mjs'
 import { recallForTurn } from './recall.mjs'
 import { formatContext } from '../memory/context.mjs'
+import { captureTurn, pendingCapture } from '../memory/capture.mjs'
+import { copyToolSignature } from './tool-signatures.mjs'
+import { modelToolsEnabled } from './provider-request.mjs'
 
 export function validateChat(input, config, secrets = []) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError('invalid_request', 'Provide a chat request.')
@@ -20,12 +23,15 @@ export function validateChat(input, config, secrets = []) {
   while (history.length > 20 || history.reduce((sum, item) => sum + item.content.length, message.length) > 12_000) history.shift()
   const project = validateProject(input.project, secrets)
   for (const name of ['stream', 'capture']) if (input[name] !== undefined && typeof input[name] !== 'boolean') throw new AppError('invalid_request', `${name} must be a boolean.`)
+  const captureMode = input.captureMode ?? 'facts'
+  if (!['facts', 'verbatim', 'both'].includes(captureMode)) throw new AppError('invalid_request', 'captureMode must be facts, verbatim, or both.')
+  if (captureMode !== 'facts' && input.capture !== true && input.capture !== false) throw new AppError('invalid_request', 'Raw chat storage requires capture: true and an explicit raw captureMode.')
   if (input.occurredAt !== undefined && (typeof input.occurredAt !== 'string' || !/^\d{4}-\d\d-\d\dT.*Z$/.test(input.occurredAt) || !Number.isFinite(Date.parse(input.occurredAt)))) {
     throw new AppError('invalid_request', 'occurredAt must be a valid UTC timestamp ending in Z.')
   }
   const mode = input.mode || 'talk'
   if (!['talk', 'plan', 'build'].includes(mode)) throw new AppError('invalid_request', 'mode must be talk, plan, or build.')
-  return { sessionId, message, history, project, model, mode, capture: input.capture !== false, stream: input.stream !== false,
+  return { sessionId, message, history, project, model, mode, capture: input.capture !== false, captureMode, stream: input.stream !== false,
     occurredAt: input.occurredAt || new Date().toISOString() }
 }
 
@@ -35,22 +41,26 @@ export async function* runChat({ input, memory, llm, agentId, config, signal, se
   signal?.throwIfAborted()
   yield { type: 'memory', data: { context: recalled.context, memories: recalled.memories, strategy: recalled.strategy,
     tokenEstimate: recalled.meta.tokenEstimate, lookups: recalled.meta.lookups, memoryUnavailable: Boolean(recalled.meta.error) } }
-  const tools = createTools({ memory, agentId, project: input.project, secrets, capture: input.capture, mode: input.mode })
+  // Fact capture is owned by the parent at completion. Enabling auto-memory
+  // must not grant the model an arbitrary write tool or duplicate each fact.
+  const tools = createTools({ memory, agentId, project: input.project, secrets, capture: false, mode: input.mode })
+  const toolsEnabled = modelToolsEnabled(config, input.model)
   const messages = [{ role: 'system', content: buildSystemPrompt({ contextBlock: recalled.context,
-    project: input.project, toolsEnabled: config.toolsEnabled, capture: input.capture, mode: input.mode,
+    project: input.project, toolsEnabled, capture: input.capture, captureMode: input.captureMode, mode: input.mode,
     memoryUnavailable: Boolean(recalled.meta.error) }) }, ...input.history, { role: 'user', content: input.message }]
   const toolCapture = []
   let answer = ''
   let outputLength = 0
-  let finishReason = 'stop'
+  let finishReason
   let question
   const callIds = new Set()
   for (let round = 0; round <= 3; round++) {
     signal?.throwIfAborted()
     const calls = []
     let roundText = ''
+    finishReason = undefined
     for await (const event of llm.streamCompletion({ messages, memories: recalled.memories, project: input.project,
-      tools: config.toolsEnabled && round < 3 ? tools.schemas : [], model: input.model, config, signal, stream: input.stream !== false })) {
+      tools: toolsEnabled && round < 3 ? tools.schemas : [], model: input.model, config, signal, stream: input.stream !== false })) {
       signal?.throwIfAborted()
       if (event.type === 'delta') {
         outputLength += event.text.length
@@ -61,15 +71,20 @@ export async function* runChat({ input, memory, llm, agentId, config, signal, se
         if (clean) yield { type: 'delta', data: { text: clean } }
       }
       if (event.type === 'tool_call') {
-        if (calls.length >= 4 || round >= 3 || !config.toolsEnabled) throw new AppError('llm_failed', 'The model exceeded the bounded tool loop.', 502)
+        if (calls.length >= 4 || round >= 3 || !toolsEnabled) throw new AppError('llm_failed', 'The model exceeded the bounded tool loop.', 502)
         if (typeof event.id !== 'string' || !event.id || event.id.length > 128 || typeof event.name !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(event.name)) {
           throw new AppError('llm_failed', 'The model returned an invalid tool call.', 502)
         }
         if (callIds.has(event.id)) throw new AppError('llm_failed', 'Duplicate tool call IDs are not allowed.', 502)
         callIds.add(event.id)
-        calls.push(redactValue(event, secrets))
+        calls.push(copyToolSignature(event, redactValue({ id: event.id, name: event.name, args: event.args }, secrets)))
       }
       if (event.type === 'finish') finishReason = event.reason
+    }
+    if (!['stop', 'tool_calls'].includes(finishReason) || (finishReason === 'tool_calls' && !calls.length)) {
+      const tail = redactor.finish()
+      if (tail) yield { type: 'delta', data: { text: tail } }
+      throw new AppError('llm_failed', 'The model stopped before completing this turn. The partial answer has been preserved.', 502, true)
     }
     if (!calls.length) break
     messages.push({ role: 'assistant', content: redactSecrets(roundText, secrets), toolCalls: calls })
@@ -111,13 +126,9 @@ export async function* runChat({ input, memory, llm, agentId, config, signal, se
   signal?.throwIfAborted()
   if (!answer.trim() && !question) throw new AppError('llm_failed', 'The model returned no answer. Any proposals already shown still require review.', 502, true)
   // Start capture without awaiting it. A disconnect after done must not lose an accepted write.
-  const capture = input.capture ? memory.ingest({ agentId, sessionId: input.sessionId, occurredAt: input.occurredAt,
-    messages: [{ role: 'user', content: input.message }, { role: 'assistant', content: [answer, question?.question].filter(Boolean).join('\n\n').slice(0, 20_000) }, ...toolCapture] }, { secrets })
-    .then(result => ({ ...result.stored, blobs: result.blobs, chainAnchor: result.chainAnchor }))
-    .catch(error => ({ verbatim: 0, facts: 0, failed: 1, blobs: [], code: 'capture_failed', message: publicError(error).error }))
-    : Promise.resolve({ verbatim: 0, facts: 0, failed: 0, blobs: [], skipped: true })
+  const capture = captureTurn({ memory, agentId, ...input, project: input.project.files.length ? input.project.name : '',
+    answer: [answer, question?.question].filter(Boolean).join('\n\n'), toolCapture, secrets })
   yield { type: 'done', data: { model: input.model, finishReason } }
-  const stored = await within(capture, captureTimeoutMs, { verbatim: 0, facts: 0, failed: 0, blobs: [], pending: true,
-    message: 'Capture is still running. Refresh inventory to check confirmed writes; do not assume storage succeeded.' }, signal)
+  const stored = await within(capture, captureTimeoutMs, pendingCapture(), signal)
   yield { type: 'stored', data: stored }
 }

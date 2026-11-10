@@ -18,7 +18,7 @@ function invoke({ env = {}, headers = {} } = {}) {
   }
 }
 const secret = 'admin-secret-'.padEnd(40, 'x')
-test('allows local development without an admin key', () => assert.equal(invoke({ env: { NODE_ENV: 'development' } }).nextCalled, true))
+test('fails closed in development without an admin key', () => { const r = invoke({ env: { NODE_ENV: 'development' } }); assert.equal(r.statusCode, 503); assert.equal(r.nextCalled, false) })
 test('fails closed in production without an admin key', () => { const r = invoke({ env: { NODE_ENV: 'production' } }); assert.equal(r.statusCode, 503); assert.equal(r.nextCalled, false) })
 test('rejects missing or incorrect admin bearer keys', () => {
   assert.equal(invoke({ env: { RECALLLOOP_ADMIN_API_KEY: secret } }).statusCode, 401)
@@ -38,4 +38,11 @@ test('rejects short configured admin keys', () => {
   const r = invoke({ env: { RECALLLOOP_ADMIN_API_KEY: 'short' }, headers: { authorization: 'Bearer short' } })
   assert.equal(r.statusCode, 500)
   assert.equal(r.nextCalled, false)
+})
+test('rejects oversized, non-ASCII, and whitespace-containing admin keys', () => {
+  for (const key of ['x'.repeat(4097), `${secret} value`, `${secret}\nheader`, `${secret}🔑`]) {
+    const r = invoke({ env: { RECALLLOOP_ADMIN_API_KEY: key } })
+    assert.equal(r.statusCode, 500)
+    assert.equal(r.nextCalled, false)
+  }
 })

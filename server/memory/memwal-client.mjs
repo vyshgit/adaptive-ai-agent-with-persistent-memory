@@ -34,6 +34,16 @@ export function memoryNamespace(agentId, tier) {
   return `rl:${namespaceAgentId(agentId)}:${tier}`
 }
 
+// Wallet/demo identities are issued by wallet-auth, never by external API clients.
+export function logicalAgentId(value) {
+  const id = requireText(value, 'agentId', 128)
+  const namespaceId = namespaceAgentId(id)
+  if (/^(?:wallet|demo)-/i.test(namespaceId) || namespaceId === 'recallloop-dashboard') {
+    throw new AppError('scope_forbidden', 'Wallet, demo, and dashboard identities are not external logical-agent scopes.', 403)
+  }
+  return id
+}
+
 export function createMemoryBackend({ env = process.env, clientFactory, lister, clock = () => new Date() } = {}) {
   let client
   let signature

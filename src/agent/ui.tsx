@@ -9,8 +9,8 @@ export function Button({ primary = false, quiet = false, size = 'md', className 
   return <button type="button" {...props} className={`${baseButton} ${size === 'sm' ? 'min-h-8 px-md py-xs text-xs' : 'min-h-10 px-lg py-md text-sm'} ${primary ? 'border-transparent bg-brand-solid text-primary-on-brand shadow-xs hover:bg-brand-solid-hover' : quiet ? 'border-transparent text-tertiary hover:bg-secondary-hover hover:text-secondary' : 'border-primary bg-primary text-secondary shadow-xs hover:bg-primary-hover'} ${className}`} />
 }
 
-export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
-  return <button type="button" aria-label={label} title={label} {...props} className={`workspace-control workspace-action inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-transparent text-tertiary hover:bg-secondary-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}>{children}</button>
+export function IconButton({ label, children, primary = false, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode; primary?: boolean }) {
+  return <button type="button" aria-label={label} title={label} {...props} className={`workspace-control workspace-action inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-transparent ${primary ? 'bg-brand-solid text-primary-on-brand hover:bg-brand-solid-hover' : 'text-tertiary hover:bg-secondary-hover hover:text-secondary'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}>{children}</button>
 }
 
 const badgeStyles = {

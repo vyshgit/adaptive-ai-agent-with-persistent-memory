@@ -44,7 +44,7 @@ export default function SessionSidebar({ sessions, activeId, busy, onSelect, onR
       </section>)}
     </nav>
     <footer className="flex shrink-0 flex-col gap-lg border-t border-secondary p-xl">
-      <p className="text-xs leading-relaxed text-tertiary">History is cached in this browser. Walrus memory is separate.</p>
+      <p className="text-xs leading-relaxed text-tertiary">History is cached in this tab for this login and clears on logout. Walrus memory is separate.</p>
       <Button quiet size="sm" disabled={busy} onClick={() => setDeleting('all')} className="w-full"><Trash2 size={14} className="shrink-0" aria-hidden="true" />Clear local history</Button>
     </footer>
     {editing && <Modal title="Rename session" onClose={() => setEditing(null)} footer={<>
@@ -59,7 +59,7 @@ export default function SessionSidebar({ sessions, activeId, busy, onSelect, onR
       <Button onClick={() => setDeleting(null)}>Keep history</Button>
       <Button disabled={busy} className="text-error-primary" onClick={() => { if (deleting === 'all') onClear(); else onDelete(deleting.id); setDeleting(null) }}>{deleting === 'all' ? 'Clear local history' : 'Delete session'}</Button>
     </>}>
-      <p className="text-sm text-secondary">{deleting === 'all' ? 'All cached sessions in this browser will be removed.' : `“${deleting.title}” will be removed from this browser.`} Walrus memories and your browser project are untouched. This does not delete remote data.</p>
+      <p className="text-sm text-secondary">{deleting === 'all' ? 'All cached conversations for this login in this tab will be removed.' : `“${deleting.title}” will be removed from this tab’s history.`} Walrus memories and your browser project are untouched. This does not delete remote data.</p>
     </Modal>}
   </div>
 }

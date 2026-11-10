@@ -1,6 +1,7 @@
 import { clearBrowserSecrets, redactBrowserText, registerBrowserSecret } from './clientSafety.ts'
 
-// In-memory only. Never put access tokens, model keys, or connection settings in a cache.
+// Session/operator auth stays in memory. Plaintext credentials never belong in
+// chat/project caches; the optional encrypted device vault is a separate surface.
 let workspaceToken = ''
 let sessionTag = ''
 export function setWorkspaceToken(token: string) { workspaceToken = token.trim(); registerBrowserSecret(workspaceToken) }

@@ -1,6 +1,7 @@
 import { test, expect } from './harness.mjs'
 import { demo, failOnPageErrors } from './helpers.mjs'
 import { scopedCacheKey } from '../src/agent/clientSafety.ts'
+import { workspaceCacheScope } from '../src/agent/workspaceCache.ts'
 import { createSession, SESSION_KEY } from '../src/agent/sessionStore.ts'
 
 // These are bounded cached-message fixtures, not generated model responses or
@@ -10,8 +11,8 @@ async function loadMessages(page, messages) {
   const auth = await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())
   const session = { ...createSession('recallloop-mock'), title: 'Markdown rendering fixture', messages }
   await page.addInitScript(({ key, session }) => {
-    localStorage.setItem(key, JSON.stringify({ version: 2, sessions: [session] }))
-  }, { key: scopedCacheKey(SESSION_KEY, auth.agentId), session })
+    sessionStorage.setItem(key, JSON.stringify({ version: 2, sessions: [session] }))
+  }, { key: scopedCacheKey(SESSION_KEY, workspaceCacheScope(auth.agentId, auth.sessionTag)), session })
   await page.reload()
   await expect(page.locator('article')).toHaveCount(messages.length)
 }

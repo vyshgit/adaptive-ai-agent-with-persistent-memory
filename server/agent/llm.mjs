@@ -1,9 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { AppError, clampNumber } from '../safety.mjs'
-import { validateProviderUrl } from './connections.mjs'
+import { validateProviderUrl, validateProviderProtocol, LOCAL_OLLAMA_BASE, LOCAL_OLLAMA_ID } from './connections.mjs'
 import { parseSse, readLimitedText } from './sse.mjs'
-import { providerFailure, providerNetworkFailure } from './provider-errors.mjs'
+import { providerFailure, providerErrorStatus, providerNetworkFailure } from './provider-errors.mjs'
+import { rememberToolSignature, copyToolSignature, toolSignatureContent } from './tool-signatures.mjs'
 import { mockTripTurn } from './mock-planning.mjs'
+import { providerHeaders, normalizeProviderPayload, dispatchProviderRequest } from './provider-request.mjs'
 
 function checkCalls(calls, complete = false) {
   if (calls.size > 4 || [...calls.values()].some(call => typeof call.id !== 'string' || call.id.length > 128
@@ -27,37 +29,23 @@ function toChatInput(messages) {
     ? { role: 'tool', tool_call_id: message.toolCallId, content: message.content }
     : { role: message.role, content: message.content || null,
       ...(message.toolCalls?.length ? { tool_calls: message.toolCalls.map(call => ({ id: call.id, type: 'function',
-        function: { name: call.name, arguments: JSON.stringify(call.args) } })) } : {}) })
+        function: { name: call.name, arguments: JSON.stringify(call.args) }, ...toolSignatureContent(call) })) } : {}) })
 }
 
 export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 15 } = {}) {
-  function requestHeaders(config) {
-    const headers = new Headers({ 'Content-Type': 'application/json', 'User-Agent': 'RecallLoop/0.2.0' })
-    if (config.apiKey) headers.set('Authorization', `Bearer ${config.apiKey}`)
-    if (env.AGENT_LLM_EXTRA_HEADERS) {
-      let extra
-      try { extra = JSON.parse(env.AGENT_LLM_EXTRA_HEADERS) } catch { throw new AppError('llm_not_configured', 'AGENT_LLM_EXTRA_HEADERS must be valid JSON.', 503) }
-      if (!extra || typeof extra !== 'object' || Array.isArray(extra)) throw new AppError('llm_not_configured', 'AGENT_LLM_EXTRA_HEADERS must be a JSON object.', 503)
-      const allowed = ['http-referer', 'x-title', 'openai-organization', 'openai-project']
-      for (const [key, value] of Object.entries(extra)) {
-        if (!allowed.includes(key.toLowerCase()) || typeof value !== 'string') throw new AppError('llm_not_configured', 'Only legitimate attribution and OpenAI organisation/project headers are supported.', 503)
-        headers.set(key, value)
-      }
-    }
-    return headers
-  }
-
   async function models(config, signal) {
     signal?.throwIfAborted()
     if (config.mode === 'mock') return { models: ['recallloop-mock'], discovered: false, verified: false }
     validateProviderUrl(config.baseUrl, env)
-    const headers = requestHeaders(config)
+    validateProviderProtocol(config.baseUrl, config.apiStyle)
+    const configured = typeof config.model === 'string' && /^[A-Za-z0-9._:/@+-]{1,128}$/.test(config.model) ? [config.model] : []
+    const headers = providerHeaders(config, { env })
     const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15_000)])
     let response
     try {
-      response = await fetchImpl(`${config.baseUrl}/models`, { headers, redirect: 'error', signal: deadline })
-      if ([404, 405, 501].includes(response.status)) { await response.body?.cancel(); return { models: [config.model], discovered: false, verified: false } }
-      if (!response.ok) throw providerFailure(response.status, await readLimitedText(response, 100_000))
+      response = await dispatchProviderRequest(`${config.baseUrl}/models`, { headers, signal: deadline }, config, fetchImpl)
+      if ([404, 405, 501].includes(response.status)) { await response.body?.cancel(); return { models: configured, discovered: false, verified: false } }
+      if (!response.ok) throw providerFailure(response.status, await readLimitedText(response, 100_000), config.baseUrl)
       let data
       try { data = JSON.parse(await readLimitedText(response)) } catch (error) {
         if (error instanceof AppError) throw error
@@ -65,15 +53,56 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
         if (deadline.aborted) throw providerNetworkFailure(deadline, 'models discovery request')
         throw new AppError('provider_invalid_response', 'The models endpoint did not return valid JSON. Check that this is an API base URL, not a dashboard URL.', 502)
       }
+      if (data?.error) throw providerFailure(providerErrorStatus(data.error, 400), JSON.stringify(data.error), config.baseUrl)
       if (!data || !Array.isArray(data.data)) throw new AppError('provider_invalid_response', 'The models endpoint must return an OpenAI-compatible data array.', 502)
-      const available = data.data.filter(item => item && typeof item.id === 'string' && /^[A-Za-z0-9._:/@+-]{1,128}$/.test(item.id)).map(item => item.id)
+      const catalogue = new Map()
+      for (const item of data.data) {
+        if (!item || typeof item.id !== 'string' || !/^[A-Za-z0-9._:/@+-]{1,128}$/.test(item.id) || (config.apiKey && item.id.includes(config.apiKey))) continue
+        const pricing = item.pricing
+        const zero = value => (typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value))) && Number(value) === 0
+        // Only OpenRouter's actual zero prices establish this label. Names,
+        // suffixes and a Hugging Face sub-provider's is_free flag do not.
+        const free = config.baseUrl === 'https://openrouter.ai/api/v1' && pricing && typeof pricing === 'object'
+          && zero(pricing.prompt) && zero(pricing.completion) && Object.values(pricing).every(zero)
+        const prior = catalogue.get(item.id)
+        const advertised = config.baseUrl === 'https://openrouter.ai/api/v1' && Array.isArray(item.supported_parameters)
+          && item.supported_parameters.length <= 100 && item.supported_parameters.every(value => typeof value === 'string')
+          ? item.supported_parameters.includes('tools') : undefined
+        const tools = prior ? prior.tools === false || advertised === false ? false : prior.tools === true && advertised === true ? true : undefined : advertised
+        catalogue.set(item.id, { id: item.id, ...(free && (!prior || prior.cost === 'provider-free') ? { cost: 'provider-free' } : {}),
+          ...(tools === undefined ? {} : { tools }) })
+      }
+      const available = [...catalogue.values()].sort((a, b) => Number(b.cost === 'provider-free') - Number(a.cost === 'provider-free'))
+      const ids = [...new Set([...configured, ...available.map(item => item.id)])].slice(0, 100)
       // An advertised model is not proof that this account can generate with it.
-      return { models: [...new Set([config.model, ...available])].slice(0, 100), discovered: true, verified: false }
+      return { models: ids, catalogue: ids.map(id => catalogue.get(id) || { id }), discovered: true, verified: false }
     } catch (error) {
       signal?.throwIfAborted()
       if (error instanceof AppError) throw error
       throw providerNetworkFailure(deadline, 'models discovery request')
     }
+  }
+
+  async function localModels(signal) {
+    signal?.throwIfAborted()
+    validateProviderUrl(LOCAL_OLLAMA_BASE, env)
+    const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(2500)])
+    try {
+      // Fixed loopback read with no credentials/extra headers, redirects,
+      // downloads or inference. The route separately requires a local launch.
+      const response = await fetchImpl('http://127.0.0.1:11434/api/tags', { signal: deadline, redirect: 'error' })
+      if (!response.ok) { await response.body?.cancel(); return null }
+      const data = JSON.parse(await readLimitedText(response, 512_000))
+      if (!Array.isArray(data?.models)) return null
+      const models = [...new Set(data.models.slice(0, 1000).filter(item => item && !item.remote_model && !item.remote_host
+        && typeof item.size === 'number' && item.size > 0 && /^[a-f\d]{64}$/i.test(item.digest || '')
+        && typeof item.name === 'string' && /^[A-Za-z0-9._:/@+-]{1,128}$/.test(item.name)
+        && !/(?:^|[-/:])cloud(?:$|[-/:])/i.test(item.name)).map(item => item.name))].slice(0, 100)
+      signal?.throwIfAborted()
+      if (!models.length) return null
+      return { id: LOCAL_OLLAMA_ID, name: 'Ollama local', mode: 'live', baseUrl: LOCAL_OLLAMA_BASE, apiKey: '', apiStyle: 'chat',
+        model: models[0], models, catalogue: models.map(id => ({ id, cost: 'local' })), toolsEnabled: true, source: 'local-discovery' }
+    } catch { signal?.throwIfAborted(); return null }
   }
 
   async function* mockCompletion({ messages, memories = [], project, tools = [], signal }) {
@@ -124,30 +153,29 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
     }
     validateProviderUrl(config.baseUrl, env)
     if (!['responses', 'chat'].includes(config.apiStyle)) throw new AppError('llm_not_configured', 'Select the responses or chat API style.', 503)
+    validateProviderProtocol(config.baseUrl, config.apiStyle)
     const responses = config.apiStyle === 'responses'
     const outputTokens = maxOutputTokens === undefined ? Math.floor(clampNumber(Number(env.AGENT_LLM_MAX_OUTPUT_TOKENS), 4000, 400, 8000))
       : Math.floor(clampNumber(maxOutputTokens, 256, 16, 8000))
-    const modernOpenAiChat = new URL(config.baseUrl).hostname === 'api.openai.com' && /^(?:gpt-(?:[5-9]|[1-9]\d)|o[134])/.test(model)
-    const body = responses ? { model, instructions: messages.find(message => message.role === 'system')?.content || '',
+    const body = normalizeProviderPayload(responses ? { model, instructions: messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n'),
       input: toResponsesInput(messages), store: false, max_output_tokens: outputTokens,
       ...(tools.length ? { tools: tools.map(tool => ({ type: 'function', ...tool.function })), ...(toolChoice ? { tool_choice: { type: 'function', name: toolChoice } } : {}) } : {}) }
-      : { model, messages: toChatInput(messages), [modernOpenAiChat ? 'max_completion_tokens' : 'max_tokens']: outputTokens, store: false,
-        ...(tools.length ? { tools, ...(toolChoice ? { tool_choice: { type: 'function', function: { name: toolChoice } } } : {}) } : {}) }
-    const headers = requestHeaders(config)
+      : { model, messages: toChatInput(messages), max_tokens: outputTokens, store: false,
+        ...(tools.length ? { tools, ...(toolChoice ? { tool_choice: { type: 'function', function: { name: toolChoice } } } : {}) } : {}) }, config)
     const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(requestTimeoutMs)])
-    const request = streaming => fetchImpl(`${config.baseUrl}/${responses ? 'responses' : 'chat/completions'}`, {
-      method: 'POST', headers, body: JSON.stringify({ ...body, stream: streaming }), signal: deadline, redirect: 'error',
-    })
+    const request = streaming => dispatchProviderRequest(`${config.baseUrl}/${responses ? 'responses' : 'chat/completions'}`, {
+      method: 'POST', headers: providerHeaders(config, { env, stream: streaming }), body: JSON.stringify({ ...body, stream: streaming }), signal: deadline,
+    }, config, fetchImpl)
     let response
     try {
       response = await request(stream)
       if (!response.ok) {
         const text = await readLimitedText(response, 100_000)
-        const failure = providerFailure(response.status, text)
+        const failure = providerFailure(response.status, text, config.baseUrl)
         if (stream && allowStreamFallback && failure.code === 'provider_streaming_unsupported') response = await request(false)
         else throw failure
       }
-      if (!response.ok) throw providerFailure(response.status, await readLimitedText(response, 100_000))
+      if (!response.ok) throw providerFailure(response.status, await readLimitedText(response, 100_000), config.baseUrl)
       if (!response.headers.get('content-type')?.includes('text/event-stream')) {
         let data
         try { data = JSON.parse(await readLimitedText(response)) } catch (error) {
@@ -156,7 +184,7 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
           if (deadline.aborted) throw providerNetworkFailure(deadline)
           throw new AppError('provider_invalid_response', 'The model endpoint did not return valid JSON or SSE. Check the API base URL and protocol.', 502)
         }
-        if (data?.error) throw providerFailure(Number(data.error.status) || 400, JSON.stringify(data.error))
+        if (data?.error) throw providerFailure(providerErrorStatus(data.error, 400), JSON.stringify(data.error), config.baseUrl)
         if (!data || typeof data !== 'object' || Array.isArray(data) || (responses && data.status && !['completed', 'incomplete'].includes(data.status))
           || (responses ? !Array.isArray(data.output) : !Array.isArray(data.choices))) {
           throw new AppError('provider_invalid_response', 'The provider failed to complete a response in the selected protocol.', 502, true)
@@ -171,14 +199,15 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
         }
         const text = responses ? parts.join('') : chatText || ''
         const calls = responses ? data.output.filter(item => item?.type === 'function_call').map(item => ({ id: item.call_id, name: item.name, arguments: item.arguments }))
-          : (toolCalls || []).map(item => ({ id: item?.id, name: item?.function?.name, arguments: item?.function?.arguments }))
+          : (toolCalls || []).map(item => rememberToolSignature({ id: item?.id, name: item?.function?.name, arguments: item?.function?.arguments }, item?.extra_content))
         if (typeof text !== 'string' || text.length > 40_000) {
           throw new AppError('llm_failed', 'The model output exceeded the turn limits or had an invalid format.', 502)
         }
         checkCalls(new Map(calls.map((call, index) => [index, call])), true)
         if (text) yield { type: 'delta', text }
-        for (const call of calls) yield { type: 'tool_call', id: call.id, name: call.name, args: parseArguments(call.arguments) }
-        yield { type: 'finish', reason: calls.length ? 'tool_calls' : data.status === 'incomplete' ? 'length' : data.choices?.[0]?.finish_reason || 'stop', usage: data.usage, transport: 'json' }
+        for (const call of calls) yield copyToolSignature(call, { type: 'tool_call', id: call.id, name: call.name, args: parseArguments(call.arguments) })
+        const reason = data.status === 'incomplete' ? 'length' : data.choices?.[0]?.finish_reason || 'stop'
+        yield { type: 'finish', reason: calls.length && reason === 'stop' ? 'tool_calls' : reason, usage: data.usage, transport: 'json' }
         return
       }
       const calls = new Map()
@@ -191,7 +220,10 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
         try { data = JSON.parse(frame.data) } catch { throw new AppError('llm_failed', 'The provider sent malformed stream data. The partial answer has been preserved.', 502, true) }
         if (!data || typeof data !== 'object' || Array.isArray(data)) continue
         const type = data.type || frame.event
-        if (data.error || data.response?.error) throw providerFailure(Number(data.error?.status || data.response?.error?.status) || 500, JSON.stringify(data.error || data.response.error))
+        if (data.error || data.response?.error) {
+          const failure = data.error || data.response.error
+          throw providerFailure(providerErrorStatus(failure, 500), JSON.stringify(failure), config.baseUrl)
+        }
         if (['response.failed', 'response.cancelled', 'error'].includes(type)) throw new AppError('provider_request_failed', 'The provider reported a generation failure.', 502, true)
         if (responses) {
           if (['response.output_text.delta', 'response.refusal.delta'].includes(type) && typeof data.delta === 'string') {
@@ -224,8 +256,10 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
             if (outputLength > 40_000) throw new AppError('llm_failed', 'The model output exceeded the turn limits.', 502)
             yield { type: 'delta', text: delta.content }
           }
+          if (delta?.tool_calls !== undefined && !Array.isArray(delta.tool_calls)) throw new AppError('provider_invalid_response', 'The provider returned malformed streamed tool calls.', 502)
           for (const item of delta?.tool_calls || []) {
-            const call = calls.get(item.index) || { id: '', name: '', arguments: '' }
+            if (!item || !Number.isInteger(item.index) || item.index < 0 || item.index > 3) throw new AppError('provider_invalid_response', 'The provider returned an invalid streamed tool-call index.', 502)
+            const call = rememberToolSignature(calls.get(item.index) || { id: '', name: '', arguments: '' }, item.extra_content)
             call.id += item.id || ''
             call.name += item.function?.name || ''
             call.arguments += item.function?.arguments || ''
@@ -237,8 +271,9 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
       }
       if (!completed) throw new AppError('llm_failed', 'The provider stream ended before completion. The partial answer has been preserved.', 502, true)
       checkCalls(calls, true)
-      for (const call of calls.values()) yield { type: 'tool_call', id: call.id, name: call.name, args: parseArguments(call.arguments) }
-      yield { type: 'finish', reason: calls.size ? 'tool_calls' : finishReason, transport: 'sse' }
+      const orderedCalls = responses ? [...calls.values()] : [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call)
+      for (const call of orderedCalls) yield copyToolSignature(call, { type: 'tool_call', id: call.id, name: call.name, args: parseArguments(call.arguments) })
+      yield { type: 'finish', reason: calls.size && finishReason === 'stop' ? 'tool_calls' : finishReason, transport: 'sse' }
     } catch (error) {
       if (signal?.aborted) throw error
       if (error instanceof AppError) throw error
@@ -283,7 +318,8 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
         const tools = [{ type: 'function', function: { name, description: 'A non-executing coding API compatibility check. It cannot read files, run commands, or write memories.',
           parameters: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } } }]
         try {
-          const result = await probe({ tools, toolChoice: name, messages: [messages[0], { role: 'user', content: 'Call recallloop_connection_check once with ok: true. This checks coding function-call transport only; nothing is executed.' }] })
+          const result = await probe({ tools, toolChoice: name, config: { ...config, verification: null, catalogue: [] },
+            messages: [messages[0], { role: 'user', content: 'Call recallloop_connection_check once with ok: true. This checks coding function-call transport only; nothing is executed.' }] })
           if (result.calls.length !== 1 || result.calls[0].name !== name || !result.calls[0].id || result.calls[0].args?.ok !== true
             || Object.keys(result.calls[0].args).length !== 1) throw new AppError('provider_invalid_response', 'The provider did not return the requested valid function call. Tool support was not verified.', 502)
           verification.tools = 'verified'
@@ -297,7 +333,7 @@ export function createLlm({ fetchImpl = fetch, env = process.env, mockDelayMs = 
     }
     return { verified: true, verification }
   }
-  return { streamCompletion, models, verify }
+  return { streamCompletion, models, localModels, verify }
 }
 
 function parseArguments(value) {

@@ -33,7 +33,7 @@ function redactExact(text, secrets) {
 export function redactSecrets(text, extra = [], env = process.env) {
   const result = redactExact(text, secretValues(extra, env))
   // Defence in depth for pasted credentials, not a DLP guarantee.
-  return result.replace(/\b(?:sk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{16,}|suiprivkey1[a-z0-9]{30,})\b/g, '[REDACTED]')
+  return result.replace(/\b(?:sk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{16,}|hf_[A-Za-z0-9]{16,}|suiprivkey1[a-z0-9]{30,})\b/g, '[REDACTED]')
 }
 
 // Scrub values before JSON encoding, including secrets containing quotes or backslashes.
@@ -53,12 +53,12 @@ export function createStreamRedactor(extra = [], env = process.env) {
     pending = redactExact(pending + text, secrets)
     let cut = pending.length
     if (!final) {
-      for (const prefix of [...secrets, 'sk-', 'suiprivkey1']) {
+      for (const prefix of [...secrets, 'sk-', 'hf_', 'suiprivkey1']) {
         for (let length = Math.min(prefix.length - 1, pending.length); length > 0; length--) {
           if (pending.endsWith(prefix.slice(0, length))) { cut = Math.min(cut, pending.length - length); break }
         }
       }
-      const token = /\b(?:sk-[A-Za-z0-9_-]*|suiprivkey1[a-z0-9]*)$/.exec(pending)
+      const token = /\b(?:sk-[A-Za-z0-9_-]*|hf_[A-Za-z0-9]*|suiprivkey1[a-z0-9]*)$/.exec(pending)
       if (token) cut = Math.min(cut, token.index)
     }
     const ready = redactSecrets(pending.slice(0, cut), extra, env)

@@ -33,16 +33,24 @@ export function createWalletAuth({ env = process.env, clock = () => Date.now(), 
   initialise = () => {}, maxSessions = 100, sessionTtlMs = SESSION_TTL_MS, challengeTtlMs = CHALLENGE_TTL_MS } = {}) {
   const sessions = new Map()
   const attempts = new Map()
+  const disposals = new Set()
   const id = () => randomBytes(32).toString('hex')
 
   function dispose(session) {
     if (!session || session.disposed) return
     session.disposed = true
+    if (session.builder) {
+      session.builderDisposal = Promise.resolve(session.builder.dispose()).catch(() => {})
+      disposals.add(session.builderDisposal)
+      void session.builderDisposal.finally(() => disposals.delete(session.builderDisposal))
+    }
     for (const controller of session.controllers) controller.abort(new DOMException('Wallet session ended', 'AbortError'))
     session.controllers.clear()
     session.memory?.destroy?.()
     session.chain?.destroy?.()
     if (session.config) session.config.apiKey = ''
+    for (const config of session.modelConnections?.values() || []) config.apiKey = ''
+    session.modelConnections?.clear()
     session.config = null
     if (session.env) for (const name of ['TATUM_API_KEY', 'MEMWAL_PRIVATE_KEY', 'MEMWAL_DELEGATE_KEY']) session.env[name] = ''
     session.tatumKey = ''
@@ -164,5 +172,5 @@ export function createWalletAuth({ env = process.env, clock = () => Date.now(), 
     return publicSession()
   }
   return { middleware, requireSession, assertActive, publicSession, challenge, login, demo, logout,
-    close() { clearInterval(timer); for (const session of sessions.values()) dispose(session); attempts.clear() } }
+    close() { clearInterval(timer); for (const session of sessions.values()) dispose(session); attempts.clear(); return Promise.all([...disposals]) } }
 }

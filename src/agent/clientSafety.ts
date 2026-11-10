@@ -1,12 +1,14 @@
 // Best-effort protection for accidentally pasted common keys. Not a DLP guarantee.
-// Connection form values are never written to any browser storage.
+// Plaintext credentials never enter browser caches. Allowlisted non-secret setup
+// fields use a separate login-scoped preference cache. Explicitly selected,
+// verified credentials may be saved only by the separate encrypted device vault.
 const knownSecrets = new Set<string>()
 export function registerBrowserSecret(value: string) { if (value.trim().length >= 8 && value.length <= 4096) knownSecrets.add(value.trim()) }
 export function clearBrowserSecrets() { knownSecrets.clear() }
 export function redactBrowserText(text: string) {
   let clean = text
   for (const key of [...knownSecrets].sort((a, b) => b.length - a.length)) clean = clean.split(key).join('[REDACTED]')
-  return clean.replace(/\b(?:sk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{16,}|suiprivkey1[a-z0-9]{30,})\b/g, '[REDACTED]')
+  return clean.replace(/\b(?:sk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{16,}|hf_[A-Za-z0-9]{16,}|suiprivkey1[a-z0-9]{30,})\b/g, '[REDACTED]')
 }
 
 export function redactBrowserValue<T>(value: T): T {
@@ -32,13 +34,13 @@ export interface CacheStorage {
 }
 
 export function browserStorage(): CacheStorage | null {
-  try { return globalThis.localStorage || null } catch { return null }
+  try { return globalThis.sessionStorage || null } catch { return null }
 }
 
 export function flushCacheOnExit(flush: () => void, page: EventTarget = window,
   visibility: EventTarget & { readonly visibilityState: string } = document) {
   // Browser navigation does not run React cleanup. Flush before pending autosave
-  // is lost, and remove old wallet listeners before its redaction set is cleared.
+  // is lost. The workspace's revocable storage lease blocks flushes after logout.
   const hidden = () => { if (visibility.visibilityState === 'hidden') flush() }
   page.addEventListener('pagehide', flush)
   visibility.addEventListener('visibilitychange', hidden)

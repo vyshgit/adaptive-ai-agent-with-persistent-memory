@@ -12,13 +12,10 @@ function safeEqual(a, b) {
 export function authenticateAdmin(req, res, next) {
   const expected = process.env.RECALLLOOP_ADMIN_API_KEY
   if (!expected) {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(503).json({ success: false, error: 'Admin API authentication is not configured.' })
-    }
-    return next()
+    return res.status(503).json({ success: false, error: 'Admin API authentication is not configured.' })
   }
-  if (expected.length < 32) {
-    return res.status(500).json({ success: false, error: 'RECALLLOOP_ADMIN_API_KEY must contain at least 32 characters.' })
+  if (expected.length < 32 || expected.length > 4096 || /[^\x21-\x7e]/.test(expected)) {
+    return res.status(500).json({ success: false, error: 'RECALLLOOP_ADMIN_API_KEY must contain 32–4096 printable ASCII characters without spaces.' })
   }
   const match = /^Bearer ([^\s]+)$/.exec(req.get('authorization') || '')
   if (!match || !safeEqual(match[1], expected)) {

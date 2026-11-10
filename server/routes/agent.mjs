@@ -1,23 +1,31 @@
 import { Router } from 'express'
 import { once } from 'node:events'
 import { AppError, asyncRoute, publicError, redactValue } from '../safety.mjs'
-import { validateConnection, publicConnection } from '../agent/connections.mjs'
+import { validateConnection, validateModelDiscovery, publicConnection, publicModels, LOCAL_OLLAMA_ID } from '../agent/connections.mjs'
 import { validateChat, runChat } from '../agent/chat.mjs'
+import { createMemoryHandoff } from '../agent/memory-handoff.mjs'
+import { createBuilderRouter } from './builder.mjs'
 
-export function createAgentRouter({ llm, connections, wallets, services, env = process.env }) {
+export function createAgentRouter({ llm, connections, wallets, services, builder = null, env = process.env }) {
   const router = Router()
   let active = 0
   let operations = 0
   let requests = 0
+  router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
   router.get('/auth/session', (req, res) => res.json(wallets.publicSession(req.workspaceSession)))
   router.post('/auth/challenge', asyncRoute(async (req, res) => res.json(wallets.challenge(req, res, req.body))))
   router.post('/auth/verify', asyncRoute(async (req, res) => res.json(await wallets.login(req, res, req.body))))
   router.post('/auth/demo', asyncRoute(async (req, res) => res.json(wallets.demo(req, res))))
-  router.post('/auth/logout', asyncRoute(async (req, res) => res.json(wallets.logout(req, res))))
+  router.post('/auth/logout', asyncRoute(async (req, res) => {
+    const session = req.workspaceSession
+    const result = wallets.logout(req, res)
+    await session?.builderDisposal
+    res.json(result)
+  }))
   router.use(wallets.requireSession, connections.middleware, (req, res, next) => {
     if (requests >= 48 || req.workspaceSession.controllers.size >= 8) return next(new AppError('busy', 'Too many workspace requests. Wait for the current requests to finish.', 429, true))
     // Keep request-time secrets until this response closes, even if logout wipes the session.
-    const secrets = services.secrets(req.workspaceSession)
+    const secrets = [...services.secrets(req.workspaceSession), req.body?.apiKey, req.body?.delegateKey].filter(Boolean)
     const json = res.json.bind(res)
     res.json = value => json(redactValue(value, [...secrets, ...services.secrets(req.workspaceSession)]))
     const controller = new AbortController()
@@ -33,29 +41,71 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
     if (session.active || session.changing || operations >= 8) throw new AppError('busy', 'Finish or stop the current operation before changing connections or writing memories.', 429, true)
     session.changing = true
     operations++
+    const previousMemory = session.memory
     let result
     try {
       result = await task(session, req.workspaceController.signal)
       wallets.assertActive(session)
       req.workspaceController.signal.throwIfAborted()
-      return result?.commit ? result.commit() : result
+      const value = result?.commit ? result.commit() : result
+      if (previousMemory !== session.memory) builder?.memoryChanged(session)
+      return value
     } catch (error) {
       if (session.disposed) wallets.assertActive(session)
       throw error
     } finally { result?.cleanup?.(); session.changing = false; operations-- }
   }
-  router.get('/status', asyncRoute(async (req, res) => res.json({ agentId: req.workspaceSession.agentId,
-    auth: wallets.publicSession(req.workspaceSession), llm: publicConnection(req.llmConfig),
-    memory: await req.workspaceSession.memory.status(), memoryConnection: req.workspaceSession.memoryConnection || null,
-    tatum: req.workspaceSession.tatum, coding: { maxToolRounds: 3, reviewRequired: true, terminal: false } })))
-  router.get('/models', (req, res) => res.json(publicConnection(req.llmConfig).models))
+  router.use('/builder', createBuilderRouter({ builder, wallets, services, connections }))
+  router.get('/status', asyncRoute(async (req, res) => {
+    const session = req.workspaceSession
+    const memory = await session.memory.status()
+    wallets.assertActive(session)
+    req.workspaceController.signal.throwIfAborted()
+    res.json({ agentId: session.agentId, auth: wallets.publicSession(session), llm: publicConnection(req.llmConfig), modelConnections: connections.list(req),
+      memory, memoryConnection: session.memoryConnection || null,
+      tatum: session.tatum, coding: { maxToolRounds: builder?.enabled ? 6 : 3, reviewRequired: !builder?.enabled,
+        permissionPolicy: builder?.enabled ? 'risk-based-with-optional-strict-review' : 'browser-proposals-only',
+        terminal: Boolean(builder?.enabled), localBuilder: Boolean(builder?.enabled) } })
+  }))
+  router.get('/models', asyncRoute(async (req, res) => res.json(publicConnection(connections.select(req, req.query.connectionId)).models)))
+  router.post('/models/discover', asyncRoute(async (req, res) => {
+    const discovered = await operation(req, async (session, signal) => {
+      if (session.kind === 'demo') throw new AppError('wallet_required', 'The offline demo never contacts live model catalogues. Sign in with your wallet first.', 403)
+      const config = validateModelDiscovery(req.body, env)
+      try {
+        const result = await llm.models(config, signal)
+        // Do not echo a credential advertised as a model by an upstream server.
+        return { success: true, baseUrl: config.baseUrl, apiStyle: config.apiStyle, models: publicModels({ ...config, models: result.models, catalogue: result.catalogue }),
+          discovered: result.discovered === true, verified: false }
+      } finally { config.apiKey = '' }
+    })
+    res.json(discovered)
+  }))
+  router.post('/models/local', asyncRoute(async (req, res) => {
+    const result = await operation(req, async (session, signal) => {
+      if (!builder?.enabled || session.kind !== 'wallet') throw new AppError('local_models_disabled', 'Local model discovery is available only in a signed-in local launch, never in a hosted preview or offline demo.', 403)
+      if (!req.body || Array.isArray(req.body) || Object.keys(req.body).length) throw new AppError('invalid_request', 'Local discovery accepts no URLs, credentials, model IDs or scope overrides.')
+      // A fixed loopback catalogue read, not inference, a download or cloud login.
+      const current = session.modelConnections?.get(LOCAL_OLLAMA_ID)
+      const config = await llm.localModels?.(signal)
+      if (!config) return { commit: () => {
+        if (current) connections.disconnect(req, LOCAL_OLLAMA_ID)
+        return { success: true, available: false, connection: null }
+      } }
+      if (current) config.model = config.models.includes(current.model) ? current.model : config.model
+      connections.admit(req, config)
+      return { commit: () => ({ success: true, available: true, connection: connections.connect(req, config, { select: false }) }) }
+    })
+    res.json(result)
+  }))
   router.post('/connect', asyncRoute(async (req, res) => {
     const connection = await operation(req, async session => {
       if (session.kind === 'demo' && req.body.mode !== 'mock') throw new AppError('wallet_required', 'The offline demo does not accept live credentials. Sign in with your wallet first.', 403)
-      const config = validateConnection(req.body, env)
+      const config = connections.admit(req, validateConnection(req.body, env))
       try {
         const discovered = await llm.models(config, req.workspaceController.signal)
         config.models = discovered.models
+        config.catalogue = discovered.catalogue
         req.workspaceController.signal.throwIfAborted()
         const checked = await llm.verify(config, { signal: req.workspaceController.signal, checkCapabilities: req.body.checkCapabilities === true })
         config.verification = checked.verification ? { ...checked.verification, discovery: discovered.discovered ? 'available' : 'unavailable' } : null
@@ -66,7 +116,7 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
   }))
   router.post('/verify', asyncRoute(async (req, res) => {
     const connection = await operation(req, async (session, signal) => {
-      const previous = session.config
+      const previous = connections.select(req, req.body.connectionId)
       if (!previous || previous.mode !== 'live') throw new AppError('llm_not_configured', 'Connect a live model API before verifying its saved session connection.', 412)
       for (const name of ['checkCapabilities', 'toolsEnabled']) if (req.body[name] !== undefined && typeof req.body[name] !== 'boolean') throw new AppError('invalid_request', `${name} must be a boolean.`)
       const config = { ...previous, ...(req.body.toolsEnabled !== undefined ? { toolsEnabled: req.body.toolsEnabled } : {}), lastVerificationFailure: null }
@@ -76,7 +126,7 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
         return { commit: () => connections.connect(req, config), cleanup() { config.apiKey = '' } }
       } catch (error) {
         config.apiKey = ''
-        if (!signal.aborted && !session.disposed && session.config === previous) {
+        if (!signal.aborted && !session.disposed && session.modelConnections?.get(previous.id) === previous) {
           const safe = publicError(error)
           previous.lastVerificationFailure = { checkedAt: new Date().toISOString(), code: safe.code, message: safe.error }
         }
@@ -85,7 +135,7 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
     })
     res.json({ success: true, connection })
   }))
-  router.post('/disconnect', asyncRoute(async (req, res) => { await operation(req, async () => connections.disconnect(req)); res.json({ success: true }) }))
+  router.post('/disconnect', asyncRoute(async (req, res) => { await operation(req, async () => connections.disconnect(req, req.body.connectionId)); res.json({ success: true }) }))
   router.post('/connections/tatum', asyncRoute(async (req, res) => res.json({ success: true,
     connection: await operation(req, (session, signal) => services.connectTatum(session, req.body, signal)) })))
   router.post('/connections/memwal', asyncRoute(async (req, res) => res.json({ success: true,
@@ -99,7 +149,13 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
   router.get('/memory', asyncRoute(async (req, res) => {
     const { memory, agentId } = req.workspaceSession
     const [status, inventory] = await Promise.all([memory.status(), memory.inventory(agentId).catch(error => ({ ...publicError(error), memories: [], total: 0 }))])
+    wallets.assertActive(req.workspaceSession)
+    req.workspaceController.signal.throwIfAborted()
     res.json({ status, inventory })
+  }))
+  router.get('/memory/handoff', asyncRoute(async (req, res) => {
+    if (Object.keys(req.query).length) throw new AppError('invalid_request', 'Cross-tool setup always uses the current wallet connection; no account or namespace overrides are accepted.')
+    res.json(createMemoryHandoff(wallets.assertActive(req.workspaceSession)))
   }))
   router.post('/memory/seed', asyncRoute(async (req, res) => res.json(await operation(req, session => session.memory.seed({ agentId: session.agentId, confirm: req.body.confirm })))))
   router.post('/memory/restore', asyncRoute(async (req, res) => res.json(await operation(req, session => session.memory.restore(session.agentId)))))
@@ -108,6 +164,8 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
     const { memory, env: sessionEnv } = req.workspaceSession
     const checkpoint = await memory.chain.checkpoint()
     const account = sessionEnv.MEMWAL_ACCOUNT_ID ? await memory.chain.object(sessionEnv.MEMWAL_ACCOUNT_ID).catch(() => null) : null
+    wallets.assertActive(req.workspaceSession)
+    req.workspaceController.signal.throwIfAborted()
     res.json({ configured: Boolean(req.workspaceSession.tatumKey), checkpoint, account,
       notice: 'This is a Tatum chain observation, not independent proof of Walrus storage.' })
   }))
@@ -115,7 +173,8 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
     if (active >= 4 || req.workspaceSession.active || req.workspaceSession.changing) throw new AppError('busy', 'A turn or connection operation is already running. Stop it or wait before starting another.', 429, true)
     const { memory, agentId } = req.workspaceSession
     const secrets = services.secrets(req.workspaceSession)
-    const input = validateChat(req.body, req.llmConfig, secrets)
+    const config = connections.select(req, req.body.connectionId)
+    const input = validateChat(req.body, config, secrets)
     const controller = req.workspaceController
     const disconnect = () => { if (!res.writableEnded) controller.abort(new DOMException('Client disconnected', 'AbortError')) }
     res.on('close', disconnect) // req.close also fires when the POST body is consumed; do not abort on it.
@@ -123,7 +182,7 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
     req.workspaceSession.active++
     let heartbeat
     try {
-      const events = runChat({ input, memory, llm, agentId, config: req.llmConfig, signal: controller.signal, secrets })
+      const events = runChat({ input, memory, llm, agentId, config, signal: controller.signal, secrets })
       if (req.body.stream === false) {
         const payload = { answer: '', memories: [], tools: [], proposals: [], stored: null, model: input.model }
         for await (const event of events) {
@@ -138,7 +197,7 @@ export function createAgentRouter({ llm, connections, wallets, services, env = p
         }
         return res.json(redactValue(payload, secrets))
       }
-      res.set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform',
+      res.set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform',
         Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
       res.flushHeaders()
       heartbeat = setInterval(() => { if (!res.destroyed && !res.writableEnded) res.write(': heartbeat\n\n') }, 15_000)

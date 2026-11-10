@@ -3,6 +3,7 @@ import { Database, RefreshCw, ChevronLeft, ChevronRight, LoaderCircle } from 'lu
 import type { MemoryStatus, MemoryOverview, MemoryRecord } from './types.ts'
 import { agentJson } from './api.ts'
 import { Badge, Button, IconButton, Modal, CopyButton, fieldClass } from './ui.tsx'
+import MemoryHandoffPanel from './MemoryHandoff.tsx'
 
 export interface ChainStatus {
   configured: boolean
@@ -18,7 +19,7 @@ export function MemoryModeBadge({ status }: { status?: MemoryStatus }) {
         : status?.mode === 'legacy' ? <Badge>Legacy</Badge> : <Badge>Memory not configured</Badge>
 }
 
-export default function MemoryRail({ overview, loading, busy, chain, onRefresh, onChain, onNotice, onSettings }: { overview?: MemoryOverview; loading: boolean; busy: boolean; chain?: ChainStatus;
+export default function MemoryRail({ overview, loading, busy, chain, handoffAccountId, onRefresh, onChain, onNotice, onSettings }: { overview?: MemoryOverview; loading: boolean; busy: boolean; chain?: ChainStatus; handoffAccountId: string | null;
   onRefresh: () => Promise<void>; onChain: () => Promise<void>; onNotice: (message: string) => void; onSettings: () => void }) {
   const [seedConfirm, setSeedConfirm] = useState(false)
   const [operation, setOperation] = useState('')
@@ -72,6 +73,7 @@ export default function MemoryRail({ overview, loading, busy, chain, onRefresh, 
         }}>Restore memory index</Button></div>
       <p className="mt-lg leading-relaxed">Seeding needs the official, write-ready Mainnet relayer and a separate confirmation. Restore is bounded; neither action replays a full chat transcript. These controls do not establish evidence until live writes are independently confirmed.</p></details>
     </section>
+    <MemoryHandoffPanel key={handoffAccountId || 'unconfigured'} accountId={handoffAccountId} busy={locked} />
     <section className="border-b border-secondary p-xl">
       <h3 className="mb-lg text-sm font-medium">Teach a preference or lesson</h3>
       <form onSubmit={async event => {

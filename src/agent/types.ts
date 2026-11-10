@@ -53,6 +53,9 @@ export interface StoredCapture {
   blobs: MemoryRecord[]
   pending?: boolean
   skipped?: boolean
+  deduplicated?: boolean
+  reason?: string
+  code?: 'capture_unavailable' | 'capture_failed'
   message?: string
 }
 
@@ -138,10 +141,13 @@ export interface ConnectionVerification {
   toolsError?: { code: string; message: string }
 }
 
+export interface ProviderModel { id: string; label: string; cost?: 'provider-free' | 'local'; tools?: boolean }
 export interface Connection {
+  id?: string
+  name?: string
   mode: 'mock' | 'live' | 'unconfigured'
   model: string
-  models: { id: string; label: string }[]
+  models: ProviderModel[]
   apiStyle: 'chat' | 'responses'
   baseUrl: string
   toolsEnabled: boolean
@@ -156,9 +162,11 @@ export interface WorkspaceStatus {
   agentId: string
   auth: WalletSession
   llm: Connection
+  modelConnections?: Connection[]
   memory: MemoryStatus
   tatum: { configured: boolean; verified: boolean; verifiedAt?: string }
   memoryConnection?: { accountId: string; owner: string; publicKey: string; verified: boolean; verifiedAt?: string } | null
+  coding?: { maxToolRounds: number; reviewRequired: boolean; terminal: boolean; localBuilder: boolean }
 }
 
 export interface WalletSession {
@@ -176,6 +184,18 @@ export type WorkspaceMode = 'talk' | 'plan' | 'build'
 export interface MemoryOverview {
   status: MemoryStatus
   inventory: Inventory
+}
+
+export interface MemoryHandoff {
+  success: boolean
+  version: number
+  network: string
+  accountId: string
+  owner: string
+  relayerUrl: string
+  namespaces: { profile: string; facts: string }
+  guides: { claudeCode: string; codex: string; reference: string }
+  instructions: string
 }
 
 export type AgentEvent =

@@ -50,7 +50,8 @@ test('HTTP mock loop delivers memory, deltas, done, stored and recalls in a fres
   const f = await workspaceHttp(t)
   const browser = f.client()
   assert.equal((await browser.demo()).data.demo, true)
-  const response = await browser.request('/chat', { body: chat({ stream: true }) })
+  const response = await browser.request('/chat', { body: chat({ stream: true, capture: true, captureMode: 'both' }) })
+  assert.equal(response.headers.get('cache-control'), 'no-store, no-transform')
   assert.equal(response.status, 200)
   assert.match(response.headers.get('content-type'), /text\/event-stream/)
   assert.equal(response.headers.get('x-accel-buffering'), 'no')
@@ -79,7 +80,7 @@ test('HTTP trip planning carries scoped recall, plan and clarification through J
   const f = await workspaceHttp(t)
   const browser = f.client()
   await browser.demo()
-  await browser.json('/chat', { body: chat({ sessionId: 'departure', stream: false, message: 'My departure city is London. I prefer short trips and EUR.' }) })
+  await browser.json('/chat', { body: chat({ sessionId: 'departure', stream: false, capture: true, message: 'My departure city is London. I prefer short trips and EUR.' }) })
   const planned = await browser.json('/chat', { body: chat({ sessionId: 'trip', mode: 'plan', stream: false, capture: false, message: 'Plan a quick trip to Alaska.' }) })
   assert.equal(planned.status, 200)
   assert.equal(planned.data.memory.lookups, 2)
@@ -105,6 +106,7 @@ test('HTTP question-only completion does not fabricate an answer or execute a wr
   const f = await workspaceHttp(t, { llm: { async *streamCompletion() {
     yield { type: 'tool_call', id: 'queued-write', name: 'remember', args: { text: 'Guessed departure city.' } }
     yield { type: 'tool_call', id: 'ask', name: 'ask_user', args: { question: 'Which city?', options: [] } }
+    yield { type: 'finish', reason: 'tool_calls' }
   } }, initialise(session) { session.memory.remember = async () => { explicitWrites++; return {} } } })
   const browser = f.client()
   await browser.demo()
@@ -239,7 +241,7 @@ test('logout ends an in-progress non-streamed HTTP turn promptly and releases it
   } }, initialise(session) { session.memory.ingest = async () => { writes++; return {} } } })
   const browser = f.client()
   await browser.demo()
-  const pending = browser.json('/chat', { body: chat({ stream: false }) })
+  const pending = browser.json('/chat', { body: chat({ stream: false, capture: true }) })
   await started.promise
   await browser.json('/auth/logout', { body: {} })
   const result = await pending
@@ -262,7 +264,7 @@ test('disconnecting an HTTP stream cancels generation, but a capture already sta
   const browser = f.client()
   await browser.demo()
   const controller = new AbortController()
-  const response = await browser.request('/chat', { body: chat(), signal: controller.signal })
+  const response = await browser.request('/chat', { body: chat({ capture: true }), signal: controller.signal })
   const reader = response.body.getReader()
   await reader.read()
   controller.abort()
@@ -280,7 +282,7 @@ test('disconnecting an HTTP stream cancels generation, but a capture already sta
   const other = second.client()
   await other.demo()
   const stop = new AbortController()
-  const stream = await other.request('/chat', { body: chat(), signal: stop.signal })
+  const stream = await other.request('/chat', { body: chat({ capture: true }), signal: stop.signal })
   const frames = parseSse(stream.body)
   for await (const frame of frames) if (frame.event === 'done') break
   await captured.promise
@@ -318,6 +320,7 @@ test('only four HTTP chats can run globally and connection mutations cannot over
     if (++running === 4) started.resolve()
     await within(gate.promise, 1000, null, signal)
     yield { type: 'delta', text: 'Finished.' }
+    yield { type: 'finish', reason: 'stop' }
   } } })
   const browsers = Array.from({ length: 5 }, () => f.client())
   for (const browser of browsers) await browser.demo()
@@ -330,7 +333,7 @@ test('only four HTTP chats can run globally and connection mutations cannot over
   assert.ok(f.sessions.every(session => session.active === 0))
 })
 
-test('HTTP response redaction keeps request-time credentials after logout wipes the session', async t => {
+test('HTTP status rejects late logged-out responses and redacts credentials in active responses', async t => {
   const gate = deferred(), started = deferred()
   const key = 'synthetic-model-key'
   const f = await workspaceHttp(t, { initialise(session) {
@@ -345,8 +348,15 @@ test('HTTP response redaction keeps request-time credentials after logout wipes 
   assert.equal(f.sessions[0].config, null)
   gate.resolve()
   const result = await pending
+  assert.equal(result.status, 401)
+  assert.equal(result.data.code, 'wallet_required')
+  assert.equal(result.data.memory, undefined)
   assert.equal(JSON.stringify(result.data).includes(key), false)
-  assert.match(result.data.memory.error, /\[REDACTED\]/)
+  await browser.demo()
+  const active = await browser.json('/status')
+  assert.equal(active.status, 200)
+  assert.match(active.data.memory.error, /\[REDACTED\]/)
+  assert.equal(JSON.stringify(active.data).includes(key), false)
 })
 
 test('external HTTP memory APIs bind bearer identities, keep wallet namespaces separate, and enforce admin seed auth', async t => {

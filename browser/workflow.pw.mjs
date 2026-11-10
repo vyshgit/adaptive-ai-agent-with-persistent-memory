@@ -1,6 +1,7 @@
 import { test, expect } from './harness.mjs'
-import { demo, send, newSession, cachedValues, failOnPageErrors } from './helpers.mjs'
+import { demo, send, setCapture, newSession, cachedValues, failOnPageErrors } from './helpers.mjs'
 import { scopedCacheKey } from '../src/agent/clientSafety.ts'
+import { workspaceCacheScope } from '../src/agent/workspaceCache.ts'
 import { createSession, SESSION_KEY } from '../src/agent/sessionStore.ts'
 
 const draft = page => page.getByRole('textbox', { name: 'Message RecallLoop', exact: true })
@@ -15,6 +16,7 @@ test('trip planning recalls departure before asking for dates, preserves the pau
   await page.getByText('Turn options', { exact: false }).click()
   await page.getByRole('checkbox', { name: 'Stream', exact: true }).uncheck()
   await page.getByText('Turn options', { exact: false }).click()
+  await setCapture(page)
   await send(page, 'My departure city is London. I prefer short trips and EUR prices.')
   await newSession(page)
   const beforeSuggestion = requests.length
@@ -60,9 +62,7 @@ test('missing departure prompts a keyboard-accessible reply, preserves existing 
   await page.setViewportSize({ width: 390, height: 844 })
   await demo(page)
   await page.getByRole('button', { name: 'Plan', exact: true }).click()
-  await page.getByText('Turn options', { exact: false }).click()
-  await page.getByRole('checkbox', { name: 'Capture chat & user facts', exact: true }).uncheck()
-  await page.getByText('Turn options', { exact: false }).click()
+  await setCapture(page, { facts: false })
   await send(page, 'Plan a quick trip to Alaska.')
   const first = latestQuestion(page)
   await expect(first).toContainText('Which city will you depart from for this trip?')
@@ -92,7 +92,7 @@ test('missing departure prompts a keyboard-accessible reply, preserves existing 
   await draft(page).press('Enter')
   await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeHidden()
   await expect(page.locator('article').last()).toContainText('Departure: Paris')
-  await expect(page.locator('article').last()).toContainText('Memory capture off for this turn')
+  await expect(page.locator('article').last()).toContainText('Auto-memory is off for this turn')
   expect((await page.evaluate(async () => (await (await fetch('/api/agent/memory', { headers: { 'X-RecallLoop-Session': (await (await fetch('/api/agent/auth/session')).json()).sessionTag } })).json()))).inventory.total).toBe(0)
   checkErrors()
 })
@@ -115,13 +115,11 @@ test('a long cached clarification preserves its task and question when a real re
       question: { id: 'long-question', question, why: 'The departure city is missing.', options: [] },
       stored: { skipped: true, verbatim: 0, facts: 0, failed: 0, blobs: [] } },
   ] }
-  await page.addInitScript(({ key, session }) => { localStorage.setItem(key, JSON.stringify({ version: 2, sessions: [session] })) },
-    { key: scopedCacheKey(SESSION_KEY, auth.agentId), session })
+  await page.addInitScript(({ key, session }) => { sessionStorage.setItem(key, JSON.stringify({ version: 2, sessions: [session] })) },
+    { key: scopedCacheKey(SESSION_KEY, workspaceCacheScope(auth.agentId, auth.sessionTag)), session })
   await page.reload()
   await expect(latestQuestion(page)).toContainText(question)
-  await page.getByText('Turn options', { exact: false }).click()
-  await page.getByRole('checkbox', { name: 'Capture chat & user facts', exact: true }).uncheck()
-  await page.getByText('Turn options', { exact: false }).click()
+  await setCapture(page, { facts: false })
   await send(page, 'I depart from London.')
   await expect(latestQuestion(page)).toContainText('What dates and length should this trip cover?')
   await expect(latestQuestion(page)).toContainText('London from your reply')
@@ -130,7 +128,7 @@ test('a long cached clarification preserves its task and question when a real re
   expect(requests[0].history[1].content.length).toBeLessThanOrEqual(4000)
   expect(requests[0].history[1].content).toContain(question)
   expect(requests[0].history[1].content).toContain('Working plan (proposed steps, not completed actions)')
-  await expect(page.locator('article').last()).toContainText('Memory capture off for this turn')
+  await expect(page.locator('article').last()).toContainText('Auto-memory is off for this turn')
   checkErrors()
 })
 
@@ -150,8 +148,8 @@ test('workflow rendering fixtures keep plans proposed, render hostile metadata l
     tools: [{ id: 'blocked', name: 'remember', status: 'blocked', preview: 'Not run: waiting for your reply.' }],
     stored: { skipped: true, verbatim: 0, facts: 0, failed: 0, blobs: [] },
   }] }
-  await page.addInitScript(({ key, session }) => { localStorage.setItem(key, JSON.stringify({ version: 2, sessions: [session] })) },
-    { key: scopedCacheKey(SESSION_KEY, auth.agentId), session })
+  await page.addInitScript(({ key, session }) => { sessionStorage.setItem(key, JSON.stringify({ version: 2, sessions: [session] })) },
+    { key: scopedCacheKey(SESSION_KEY, workspaceCacheScope(auth.agentId, auth.sessionTag)), session })
   await page.reload()
   const article = page.locator('article').last()
   await expect(article.getByRole('region', { name: 'Working plan', exact: true })).toContainText('**Proposed**, not executed')

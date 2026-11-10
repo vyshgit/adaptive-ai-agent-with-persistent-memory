@@ -8,6 +8,7 @@ export const SESSION_KEY = 'recallloop.sessions.v2'
 export const MAX_SESSIONS = 50
 export const MAX_MESSAGES = 200
 const MAX_CACHE_CHARS = 2_000_000
+const captureCount = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? Math.min(2000, value) : 0
 
 export function createSession(model?: string): Session {
   const now = new Date().toISOString()
@@ -41,10 +42,13 @@ function safeMessage(raw: unknown): ChatMessage | null {
       && ['running', 'done', 'error', 'blocked'].includes(tool.status)).slice(0, 12).map(tool => ({ id: tool.id.slice(0, 128), name: tool.name.slice(0, 64),
       status: tool.status === 'running' ? 'error' : tool.status, preview: redactBrowserText(String(tool.preview || '').slice(0, 500)) })) : [],
     plan: normalisePlan(item.plan), question: normaliseQuestion(item.question),
-    stored: item.stored ? { verbatim: Number(item.stored.verbatim) || 0, facts: Number(item.stored.facts) || 0, failed: Number(item.stored.failed) || 0,
+    stored: item.stored && typeof item.stored === 'object' && !Array.isArray(item.stored) ? { verbatim: captureCount(item.stored.verbatim), facts: captureCount(item.stored.facts), failed: captureCount(item.stored.failed),
       blobs: Array.isArray(item.stored.blobs) ? item.stored.blobs.filter(blob => blob && typeof blob.blobId === 'string'
         && typeof blob.namespace === 'string').slice(0, 100).map(blob => ({ blobId: blob.blobId.slice(0, 160), namespace: blob.namespace.slice(0, 128), tier: blob.tier })) : [],
-      pending: item.stored.pending, skipped: item.stored.skipped, message: redactBrowserText(String(item.stored.message || '').slice(0, 500)) } : undefined,
+      pending: item.stored.pending === true, skipped: item.stored.skipped === true, deduplicated: item.stored.deduplicated === true,
+      reason: ['disabled', 'no_context', 'no_facts'].includes(item.stored.reason || '') ? item.stored.reason : undefined,
+      code: ['capture_unavailable', 'capture_failed'].includes(item.stored.code || '') ? item.stored.code : undefined,
+      message: redactBrowserText(String(item.stored.message || '').slice(0, 500)) } : undefined,
     error: typeof item.error === 'string' ? redactBrowserText(item.error.slice(0, 1000)) : undefined, retryable: item.retryable === true }
 }
 

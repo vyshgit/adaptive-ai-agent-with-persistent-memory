@@ -27,7 +27,7 @@ export async function runMainnetSeed({ env = process.env, confirmMainnet = false
   if (!confirmMainnet) throw new AppError('seed_refused', 'Mainnet seeding spends account quota. Use npm run seed:memory -- --confirm-mainnet after reviewing your configuration.', 412)
   if (!env.TATUM_API_KEY) throw new AppError('seed_refused', 'TATUM_API_KEY is required for the evidence checkpoint. Configure a Mainnet key before writing.', 412)
   const identity = cliIdentity({ agentId, walletAddress, fallback: env.RECALLLOOP_AGENT_ID || 'recallloop-workspace' })
-  const memory = injectedMemory || createMemoryService({ env })
+  const memory = injectedMemory || createMemoryService({ env, principal: identity.walletAddress ? identity.agentId : null })
   try {
     const status = await memory.status()
     if (status.mode !== 'relayer' || status.network !== 'mainnet' || !status.healthy || !status.writeReady) {

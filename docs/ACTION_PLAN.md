@@ -453,6 +453,11 @@ can be tested without credentials. Live checks require `MEMWAL_PRIVATE_KEY` and
    - The gateway allowlists client fingerprints: plain `curl`/Node `fetch` gets
      `401 unauthorized_client_error` even with a valid key. Do not impersonate another
      client; demo with `RECALLLOOP_LLM_MODE=mock` unless AgentRouter allowlists the app.
+   - **Stateless only.** `store: false`, no `previous_response_id`, no `rs_...`/`msg_...`
+     item ids. AgentRouter pools Azure OpenAI resources; a stored item is valid only on the
+     resource that created it, and cross-resource reuse fails with
+     *"created under a different Azure OpenAI resource"*. Rebuild each request from local
+     transcript text.
 7. **Seed content.** Expand the ten demo memories in
    `scripts/demo-memories.mjs` (worktree `agents/walrus-memory-integration-docs`) to twelve,
    or curate a new set.

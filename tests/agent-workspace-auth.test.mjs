@@ -47,11 +47,13 @@ test('provider URL allowlist rejects private networks, redirects, URL secrets an
 })
 
 test('connection validation keeps public state key-free and labels the mock honestly', () => {
-  const config = validateConnection({ baseUrl: 'https://api.openai.com/v1', apiKey: 'private-api-secret', model: 'example-model', apiStyle: 'responses' })
+  const input = { baseUrl: 'https://api.openai.com/v1', apiKey: 'private-api-secret', model: 'example-model', apiStyle: 'responses' }
+  const config = validateConnection(input)
   assert.equal(JSON.stringify(publicConnection(config)).includes('private-api-secret'), false)
   assert.equal(validateConnection({ mode: 'mock' }).mode, 'mock')
-  assert.throws(() => validateConnection({ ...config, apiKey: 'bad\nheader' }), /newlines/)
-  assert.throws(() => validateConnection({ ...config, toolsEnabled: 'false' }), /boolean/)
+  assert.throws(() => validateConnection({ ...input, apiKey: 'bad\nheader' }), /newlines/)
+  assert.throws(() => validateConnection({ ...input, toolsEnabled: 'false' }), /boolean/)
+  assert.throws(() => validateConnection(config), /Unknown model connection field/)
 })
 
 test('wallet-bound model connections are isolated, expire, and never use owner defaults', () => {

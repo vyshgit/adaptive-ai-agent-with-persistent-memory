@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { apiCredential, createSessionServices } from '../server/agent/session-services.mjs'
-import { suiAddress } from '../server/agent/wallet-auth.mjs'
+import { suiAddress, walletAgentId } from '../server/agent/wallet-auth.mjs'
 import { OFFICIAL_RELAYER } from '../server/memory/memwal-client.mjs'
 
 const pair = Ed25519Keypair.generate()
@@ -35,14 +35,15 @@ function fixture(options = {}) {
       backends.push(backend)
       return backend
     },
-    memoryFactory: ({ env, backend, chain }) => {
-      const memory = { env, backend, chain, destroyed: false, destroy() { this.destroyed = true; backend?.destroy() } }
+    memoryFactory: ({ env, backend, chain, principal }) => {
+      const memory = { env, backend, chain, principal, destroyed: false, destroy() { this.destroyed = true; backend?.destroy() } }
       memories.push(memory)
       return memory
     },
     ...options.dependencies,
   })
-  const session = { kind: options.kind || 'wallet', address: pair.toSuiAddress(), config: null }
+  const kind = options.kind || 'wallet'
+  const session = { kind, address: pair.toSuiAddress(), agentId: kind === 'demo' ? 'demo-test' : walletAgentId(pair.toSuiAddress()), config: null }
   services.initialise(session)
   return { services, session, sdk, calls, backends, memories, get account() { return account }, set account(value) { account = value } }
 }
@@ -58,7 +59,8 @@ test('user workspaces inherit policy only; neither wallet nor demo uses owner cr
     const f = fixture({ kind })
     assert.equal(f.session.env.MEMWAL_SERVER_URL, OFFICIAL_RELAYER)
     assert.equal(f.session.env.RECALLLOOP_MEMORY_MODE, kind === 'demo' ? 'mock' : '')
-    assert.equal(f.session.env.RECALLLOOP_CAPTURE_MODE, 'verbatim')
+    assert.equal(f.session.env.RECALLLOOP_CAPTURE_MODE, 'facts')
+    assert.equal(f.session.memory.principal, f.session.agentId)
     assert.equal(f.session.env.MEMWAL_PRIVATE_KEY, undefined)
     assert.equal(f.session.env.AGENT_LLM_API_KEY, undefined)
     assert.equal(f.session.tatumKey, '')
@@ -71,6 +73,12 @@ test('user workspaces inherit policy only; neither wallet nor demo uses owner cr
 test('API credential validation rejects header injection, short keys, spaces, and non-ASCII', () => {
   assert.equal(apiCredential('user-tatum-key', 'Tatum API key'), 'user-tatum-key')
   for (const key of ['', 'short', 'long\nheader', 'bad key with space', 'secret-🔑']) assert.throws(() => apiCredential(key, 'Tatum API key'), /Tatum API key/)
+})
+test('wallet memory initialization cannot silently fall back to an unbound or forged principal', () => {
+  const services = createSessionServices()
+  assert.throws(() => services.initialise({ kind: 'wallet', address: pair.toSuiAddress() }), { code: 'invalid_request' })
+  assert.throws(() => services.initialise({ kind: 'wallet', address: pair.toSuiAddress(), agentId: walletAgentId('0xc') }), { code: 'scope_forbidden' })
+  assert.throws(() => services.initialise({ kind: 'demo', agentId: walletAgentId(pair.toSuiAddress()) }), { code: 'scope_forbidden' })
 })
 
 test('Tatum verification is staged, key-isolated, and replace/disconnect wipes old readers', async () => {
@@ -125,12 +133,14 @@ test('Walrus connection checks official Shared account JSON owner, then signed d
   assert.equal(connected.verified, true)
   assert.equal(f.backends[0].destroyed, false)
   assert.equal(f.session.env.MEMWAL_PRIVATE_KEY, delegateKey)
+  assert.equal(f.session.memory.principal, f.session.agentId)
   assert.equal(JSON.stringify(connected).includes(delegateKey), false)
   f.services.disconnectMemory(f.session)
   assert.equal(f.backends[0].destroyed, true)
   assert.equal(f.session.env.MEMWAL_PRIVATE_KEY, '')
   assert.equal(f.session.env.RECALLLOOP_MEMORY_MODE, '')
   assert.equal(f.session.tatumKey, 'user-tatum-key', 'disconnecting memory does not remove Tatum')
+  assert.equal(f.session.memory.principal, f.session.agentId)
 })
 
 test('missing Tatum, demo mode, wallet keys, and malformed delegate credentials are refused', async () => {

@@ -25,7 +25,7 @@ export const TOOL_SCHEMAS = [
     { kind: { type: 'string', enum: ['checkpoint', 'object'] }, address: text(66) }, ['kind']),
 ]
 
-export function createTools({ memory, agentId, project, secrets = [], capture = true, mode = 'build' }) {
+export function createTools({ memory, agentId, project, secrets = [], capture = false, mode = 'build' }) {
   const files = new Map(project.files.map(file => [file.path, redactSecrets(file.content, secrets)]))
   let outputBudget = 40_000
   const proposals = []

@@ -1,10 +1,11 @@
-import { CornerDownRight, User, GitPullRequest, MessageSquarePlus, CheckCircle2 } from 'lucide-react'
+import { CornerDownRight, User, GitPullRequest, MessageSquarePlus } from 'lucide-react'
 import type { ChatMessage } from './types.ts'
 import { Badge, Button } from './ui.tsx'
 import MemoryChips from './MemoryChips.tsx'
 import MarkdownMessage from './MarkdownMessage.tsx'
 import { PlanBlock, QuestionBlock, ToolLog } from './TurnWorkflow.tsx'
 import { turnLabel } from './workflow.ts'
+import CaptureStatus from './CaptureStatus.tsx'
 
 export default function Message({ message, busy, latest = false, onReview, onFeedback, onRetry, onDraftReply }: { message: ChatMessage; busy: boolean; latest?: boolean; onReview: () => void; onFeedback: () => void; onRetry?: () => void; onDraftReply?: (reply: string) => void }) {
   const assistant = message.role === 'assistant'
@@ -28,12 +29,7 @@ export default function Message({ message, busy, latest = false, onReview, onFee
     {message.error && <p role="alert" className="mt-lg text-sm text-error-primary">{message.error}</p>}
     {onRetry && !busy && (message.retryable || message.status === 'stopped') && <Button className="mt-md" onClick={onRetry}>Retry this turn</Button>}
     {assistant && message.status === 'complete' && <footer className="mt-xl flex flex-wrap items-center justify-between gap-md border-t border-secondary pt-lg">
-      <div className="text-xs text-tertiary">
-        {!message.stored ? <span>Waiting for capture confirmation…</span> : message.stored.skipped ? <span>Memory capture off for this turn.</span>
-          : message.stored.pending ? <span className="text-warning-primary" title={message.stored.message}>Capture pending. Refresh inventory before retrying.</span>
-            : message.stored.failed ? <span className="text-warning-primary">{message.stored.verbatim + message.stored.facts} confirmed; {message.stored.failed} unconfirmed. {message.stored.message}</span>
-              : <span className="inline-flex items-center gap-xs"><CheckCircle2 size={13} className="shrink-0" />{message.stored.verbatim} transcript records · {message.stored.facts} facts confirmed</span>}
-      </div>
+      <CaptureStatus stored={message.stored} />
       <Button quiet size="sm" disabled={busy} onClick={onFeedback}><MessageSquarePlus size={14} className="shrink-0" aria-hidden="true" />Record outcome</Button>
     </footer>}
     </div>

@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { writeFile } from 'node:fs/promises'
 import { AppError, redactSecrets } from '../server/safety.mjs'
-import { namespaceAgentId } from '../server/memory/memwal-client.mjs'
+import { logicalAgentId } from '../server/memory/memwal-client.mjs'
 import { walletAgentId, suiAddress } from '../server/agent/wallet-auth.mjs'
 
 export function isEntry(url) { return Boolean(process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === url) }
@@ -17,8 +17,7 @@ export function cliIdentity({ agentId, walletAddress, fallback = 'recallloop-wor
   if (agentId && walletAddress) throw new AppError('invalid_request', 'Choose --agent-id or --wallet-address, not both.')
   if (walletAddress) return { agentId: walletAgentId(walletAddress), walletAddress: suiAddress(walletAddress) }
   const id = agentId || fallback
-  namespaceAgentId(id)
-  return { agentId: id, walletAddress: null }
+  return { agentId: logicalAgentId(id), walletAddress: null }
 }
 
 // Explicit local operator export, never called by a server route. Do not overwrite

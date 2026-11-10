@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import { ArrowUp, Square, FileCode2, LoaderCircle } from 'lucide-react'
 import type { Connection, Phase, WorkspaceMode, MemoryStatus } from './types.ts'
 import { Button, Checkbox, fieldClass } from './ui.tsx'
+import ModelOptions from './ModelOptions.tsx'
 
 interface Props {
   inputRef?: RefObject<HTMLTextAreaElement>
@@ -12,12 +13,14 @@ interface Props {
   onStop: () => void
   model: string
   onModel: (value: string) => void
-  connection?: Connection
+  connections: Connection[]
   busy: boolean
   disabled: boolean
   phase: Phase
   capture: boolean
   onCapture: (value: boolean) => void
+  captureRaw: boolean
+  onCaptureRaw: (value: boolean) => void
   stream: boolean
   onStream: (value: boolean) => void
   files: number
@@ -27,13 +30,13 @@ interface Props {
   onMode: (mode: WorkspaceMode) => void
 }
 
-export default function Composer({ inputRef, value, onChange, onSend, onStop, model, onModel, connection, busy, disabled, phase, capture, onCapture, stream, onStream, files, memoryStatus, onFiles, mode, onMode }: Props) {
+export default function Composer({ inputRef, value, onChange, onSend, onStop, model, onModel, connections, busy, disabled, phase, capture, onCapture, captureRaw, onCaptureRaw, stream, onStream, files, memoryStatus, onFiles, mode, onMode }: Props) {
   const ownInput = useRef<HTMLTextAreaElement>(null)
   const input = inputRef || ownInput
   const tooLong = value.length > 4000
   const modeHint = mode === 'build' ? 'Propose code changes when requested. You approve every edit.' : mode === 'plan' ? 'Make a plan using recalled context. No code proposals.' : 'Discuss, decide, and share context. No code proposals.'
-  const captureHint = !capture ? 'Capture off' : memoryStatus?.mode === 'mock' ? 'Mock capture · ephemeral'
-    : memoryStatus?.mode === 'relayer' && memoryStatus.writeReady ? 'Walrus capture · costs apply' : 'Capture on · storage unavailable'
+  const captureHint = !capture ? 'Auto-memory off' : memoryStatus?.mode === 'mock' ? `Mock ${captureRaw ? 'facts + raw chat' : 'facts'} · ephemeral`
+    : memoryStatus?.mode === 'relayer' && memoryStatus.writeReady ? `Walrus ${captureRaw ? 'facts + raw chat' : 'facts'} · costs apply` : 'Auto-memory on · connect Walrus to save'
   return <form className="workspace-scroll min-h-0 shrink overflow-y-auto bg-primary px-xl pb-xl pt-lg sm:px-3xl" onSubmit={event => { event.preventDefault(); if (!busy && !disabled && value.trim() && !tooLong) onSend() }}>
     <div className="mx-auto w-full max-w-3xl">
     <div className="mb-lg flex flex-wrap items-center justify-between gap-sm">
@@ -51,9 +54,8 @@ export default function Composer({ inputRef, value, onChange, onSend, onStop, mo
     <div className="mt-md flex items-center justify-between gap-md">
       <div className="flex min-w-0 flex-1 flex-col gap-xs">
         <label htmlFor="agent-model" className="sr-only">Model for this turn</label>
-         <select id="agent-model" value={model} onChange={event => onModel(event.target.value)} disabled={busy || !connection?.models.length} className={`${fieldClass} max-w-64 truncate`}>
-          {!connection?.models.length && <option value="">No model connected</option>}
-          {connection?.models.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+         <select id="agent-model" value={model} onChange={event => onModel(event.target.value)} disabled={busy || !connections.length} className={`${fieldClass} max-w-64 truncate`}>
+           <ModelOptions connections={connections} />
         </select>
       </div>
       {busy ? <Button onClick={onStop}><Square size={14} className="shrink-0" aria-hidden="true" />Stop</Button>
@@ -61,11 +63,12 @@ export default function Composer({ inputRef, value, onChange, onSend, onStop, mo
     </div>
     </div>
     <div className="mt-lg flex flex-wrap items-start justify-between gap-md">
-      <details className="min-w-0 flex-1 text-xs text-tertiary"><summary className="cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Turn options <span className="ml-sm">· {captureHint}{!stream ? ' · non-streamed' : ''}</span></summary>
+      <Checkbox checked={capture} onChange={onCapture} disabled={busy}>Auto-memory</Checkbox>
+      <details className="order-last min-w-0 basis-full text-xs text-tertiary sm:order-none sm:flex-1"><summary className="cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">Turn options <span className="ml-sm">· {captureHint}{!stream ? ' · non-streamed' : ''}</span></summary>
       <div className="mt-lg flex flex-wrap items-center gap-xl">
-        <Checkbox checked={capture} onChange={onCapture} disabled={busy}>Capture chat &amp; user facts</Checkbox>
+        <Checkbox checked={capture && captureRaw} onChange={onCaptureRaw} disabled={busy || !capture}>Also save raw chat</Checkbox>
         <Checkbox checked={stream} onChange={onStream} disabled={busy}>Stream</Checkbox>
-      </div><p className="mt-md text-xs leading-relaxed text-tertiary">Automatic capture sends chat and extracted user facts to the memory backend. The Walrus relayer sees plaintext. Mock memory disappears on restart. Streaming and function support depend on the selected model; check them in Settings.</p></details>
+      </div><p className="mt-md text-xs leading-relaxed text-tertiary">Auto-memory is on by default and remembers useful user-stated preferences, decisions and goals after completed turns. Your choice is kept for this login. Files, tool output and assistant claims are excluded from automatic facts. Raw chat is a separate choice. The relayer processes plaintext; storage costs apply. Recall still works with auto-memory off. Mock memory is ephemeral.</p></details>
       <span className={`shrink-0 text-xs ${tooLong ? 'text-error-primary' : 'text-tertiary'}`} aria-live={tooLong ? 'polite' : 'off'}>{value.length}/4000</span>
     </div>
     <p id="composer-hint" className="mt-lg text-xs text-tertiary">Enter to send · Shift+Enter for a new line · Never share secrets.</p>

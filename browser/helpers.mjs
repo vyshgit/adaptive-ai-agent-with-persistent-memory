@@ -82,6 +82,14 @@ export async function openSettings(page, section = 'Model') {
   return dialog
 }
 
+export async function chooseProviderModel(settings, model) {
+  await settings.getByRole('button', { name: /^(?:Load|Refresh) models$/ }).click()
+  const select = settings.getByRole('combobox', { name: 'Model', exact: true })
+  await expect(select).toBeEnabled()
+  await select.selectOption(model)
+  await expect(settings.getByRole('button', { name: 'Connect & verify model', exact: true })).toBeEnabled()
+}
+
 export async function openPanel(page, panel = 'project') {
   const mobile = page.getByRole('combobox', { name: 'Workspace view', exact: true })
   const labels = { project: 'Files', review: /^Review(?: \(\d+\))?$/, memory: 'Memory' }
@@ -115,6 +123,15 @@ export async function send(page, text) {
   return assistant
 }
 
+export async function setCapture(page, { facts = true, raw = false } = {}) {
+  const options = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: 'Turn options' }) })
+  const wasOpen = await options.getAttribute('open') !== null
+  if (!wasOpen) await options.locator('summary').click()
+  await page.getByRole('checkbox', { name: 'Auto-memory', exact: true }).setChecked(facts)
+  if (facts) await options.getByRole('checkbox', { name: 'Also save raw chat', exact: true }).setChecked(raw)
+  if (!wasOpen) await options.locator('summary').click()
+}
+
 export async function newSession(page) {
   await page.locator('header').first().getByRole('button', { name: 'New session', exact: true }).click()
   await expect(page.locator('article')).toHaveCount(0)
@@ -134,8 +151,11 @@ export async function downloadedText(page, action) {
   return { name: download.suggestedFilename(), text: await readFile(await download.path(), 'utf8') }
 }
 
-export async function cachedValues(page) {
-  return page.evaluate(() => [...Array(localStorage.length)].map((_, i) => [localStorage.key(i), localStorage.getItem(localStorage.key(i))]))
+export async function cachedValues(page, area = null) {
+  return page.evaluate(area => (area ? [area] : ['sessionStorage', 'localStorage']).flatMap(name => {
+    const storage = window[name]
+    return [...Array(storage.length)].map((_, i) => [`${name}:${storage.key(i)}`, storage.getItem(storage.key(i))])
+  }), area)
 }
 
 export async function holdCacheTimers(page) {
@@ -143,7 +163,20 @@ export async function holdCacheTimers(page) {
   // The regression must exercise navigation flushing, not wait out the debounce.
   await page.addInitScript(() => {
     const schedule = window.setTimeout.bind(window)
-    window.setTimeout = (callback, delay, ...args) => schedule(callback, delay === 350 ? 60_000 : delay, ...args)
+    const queued = []
+    window.setTimeout = (callback, delay, ...args) => {
+      const timer = schedule(callback, delay === 350 ? 60_000 : delay, ...args)
+      if (delay === 350) queued.push({ callback, args, timer })
+      return timer
+    }
+    // Replay even cancelled callbacks to model an autosave already queued before
+    // logout teardown. Revoked cache leases, not timer cancellation, must win.
+    window.recallloopFireDeferredCacheCallbacks = () => {
+      for (const { callback, args, timer } of queued.splice(0)) {
+        clearTimeout(timer)
+        if (typeof callback === 'function') callback(...args)
+      }
+    }
   })
 }
 

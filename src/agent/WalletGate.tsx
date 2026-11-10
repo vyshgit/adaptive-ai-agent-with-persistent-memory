@@ -8,6 +8,11 @@ import { redactBrowserText } from './clientSafety.ts'
 import type { WalletSession } from './types.ts'
 import { Button, IconButton, fieldClass } from './ui.tsx'
 import AgentApp from './AgentApp.tsx'
+import { clearInactiveWorkspaceCaches, createWorkspaceCache, workspaceCacheScope } from './workspaceCache.ts'
+import type { WorkspaceCache } from './workspaceCache.ts'
+import LegacyCacheCleanup from './LegacyCacheCleanup.tsx'
+import { createDeviceVault } from './deviceVault.ts'
+import type { DeviceVault } from './deviceVault.ts'
 
 type SigningWallet = WalletWithFeatures<StandardConnectFeature & StandardEventsFeature & SuiSignPersonalMessageFeature & Partial<StandardDisconnectFeature>>
 function availableWallets(): SigningWallet[] {
@@ -32,28 +37,54 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
   const [token, setToken] = useState('')
   const generation = useRef(0)
   const mutation = useRef(false)
+  const cache = useRef<WorkspaceCache | null>(null)
+  const vault = useRef<DeviceVault | null>(null)
+  const channel = useRef<BroadcastChannel | null>(null)
   const current = useRef(auth)
   current.current = auth
 
-  function accept(next: WalletSession) { setSessionTag(next.sessionTag); setAuth(next) }
+  function forgetWorkspace() {
+    vault.current?.destroy(); vault.current = null
+    const cleared = cache.current?.revoke() !== false
+    cache.current = null; current.current = undefined
+    setAuth(undefined); setSessionTag(null)
+    if (clearInactiveWorkspaceCaches(null).failed || !cleared) setError('This session’s tab cache could not be cleared. Close the tab and clear site data before sharing this browser.')
+  }
+  function accept(next: WalletSession) {
+    const valid = Boolean(next.sessionTag && next.agentId && (next.authenticated || next.demo))
+    const scope = valid ? workspaceCacheScope(next.agentId!, next.sessionTag!) : null
+    let cleared = true
+    if (cache.current && cache.current.scope !== scope) { vault.current?.destroy(); vault.current = null; cleared = cache.current.revoke(); cache.current = null }
+    const cleanup = clearInactiveWorkspaceCaches(scope)
+    if (valid && !cache.current) cache.current = createWorkspaceCache(next.agentId!, next.sessionTag!)
+    if (next.authenticated && cache.current && !vault.current) {
+      const workspace = cache.current
+      vault.current = createDeviceVault(next.agentId!, { isActive: () => workspace.active && Date.parse(next.expiresAt || '') > Date.now() })
+    }
+    current.current = next; setSessionTag(next.sessionTag); setAuth(next)
+    if (!cleared || cleanup.failed) setError('This session’s tab cache could not be cleared. Close the tab and clear site data before sharing this browser.')
+    return cleared && !cleanup.failed
+  }
+  function notifySessionChange() { try { channel.current?.postMessage('changed') } catch { /* closed/blocked channel */ } }
   async function refresh() {
     if (mutation.current) return
     const id = ++generation.current
     try {
       const result = await agentJson<WalletSession>('/auth/session')
-      if (id === generation.current) { accept(result); setError('') }
-    } catch (error) { if (id === generation.current) { setAuth(undefined); setSessionTag(null); setError(error instanceof Error ? error.message : 'Session check failed.') } }
+      if (id === generation.current && accept(result)) setError('')
+    } catch (error) { if (id === generation.current) { if (!current.current?.sessionTag) forgetWorkspace(); setError(error instanceof Error ? error.message : 'Session check failed.') } }
     finally { if (id === generation.current) setPending('') }
   }
   async function logout() {
     if (mutation.current) return
     const id = ++generation.current
     mutation.current = true
+    vault.current?.lock()
     setPending('Ending wallet session…'); setError('')
     try {
       const result = await agentJson<WalletSession>('/auth/logout', { method: 'POST', body: '{}' })
       if (id === generation.current) {
-        accept(result); setConnected(undefined); setAccounts([]); setAccountAddress('')
+        accept(result); notifySessionChange(); setConnected(undefined); setAccounts([]); setAccountAddress('')
         // The server session has already ended. Extension disconnect is optional
         // and cannot restore that session if the extension declines it.
         void disconnectExtension(connected)
@@ -65,20 +96,25 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
     const registry = getWallets()
     const update = () => { setWallets(availableWallets()); setWalletIndex(0) }
     const off = [registry.on('register', update), registry.on('unregister', update)]
-    const changed = () => { setAuth(undefined); setSessionTag(null); void refresh() }
+    const changed = () => { forgetWorkspace(); void refresh() }
     const focus = () => { void refresh() }
+    const leaving = () => { vault.current?.lock() }
+    const storageChanged = (event: StorageEvent) => { if (event.key === null || event.key === vault.current?.storageKey) vault.current?.sync() }
     window.addEventListener('recallloop-auth-changed', changed)
     window.addEventListener('focus', focus)
+    window.addEventListener('pagehide', leaving)
+    window.addEventListener('storage', storageChanged)
+    try { channel.current = new BroadcastChannel('recallloop-auth'); channel.current.onmessage = event => { if (event.data === 'changed') changed() } } catch { /* API/focus/expiry checks remain the fallback */ }
     void refresh()
-    return () => { generation.current++; off.forEach(remove => remove()); window.removeEventListener('recallloop-auth-changed', changed); window.removeEventListener('focus', focus) }
+    return () => { generation.current++; vault.current?.destroy(); vault.current = null; off.forEach(remove => remove()); window.removeEventListener('recallloop-auth-changed', changed); window.removeEventListener('focus', focus); window.removeEventListener('pagehide', leaving); window.removeEventListener('storage', storageChanged); channel.current?.close(); channel.current = null }
   }, [])
   useEffect(() => {
-    // Previous workspace cleanup has flushed its already-redacted caches before this runs.
+    // Revocation blocks the previous workspace's pending autosave/unmount flushes.
     resetSessionSecrets()
   }, [auth?.sessionTag])
   useEffect(() => {
     if (!auth?.expiresAt) return
-    const timeout = setTimeout(() => { setAuth(undefined); setSessionTag(null); void refresh() }, Math.max(0, Date.parse(auth.expiresAt) - Date.now()) + 100)
+    const timeout = setTimeout(() => { forgetWorkspace(); void refresh() }, Math.max(0, Date.parse(auth.expiresAt) - Date.now()) + 100)
     return () => clearTimeout(timeout)
   }, [auth?.expiresAt])
   useEffect(() => {
@@ -124,7 +160,7 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
       if (id !== generation.current) return
       setPending('Verifying wallet ownership…')
       const result = await agentJson<WalletSession>('/auth/verify', { method: 'POST', body: JSON.stringify({ address: account.address, challengeId: challenge.challengeId, signature: signed.signature }) })
-      if (id === generation.current) accept(result)
+      if (id === generation.current) { accept(result); notifySessionChange() }
     } catch (error) { if (id === generation.current) setError(redactBrowserText(error instanceof Error ? error.message : 'Wallet sign-in was declined or failed.')) }
     finally { if (id === generation.current) { mutation.current = false; setPending('') } }
   }
@@ -133,7 +169,7 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
     setConnected(undefined); setAccounts([]); setAccountAddress(''); setError('')
     void disconnectExtension(wallet)
   }
-  if (auth?.sessionTag && (auth.authenticated || auth.demo)) return <AgentApp key={auth.sessionTag} identity={auth} dark={dark} onTheme={onTheme} onLogout={logout} />
+  if (auth?.sessionTag && cache.current && (auth.authenticated || auth.demo)) return <AgentApp key={auth.sessionTag} identity={auth} cache={cache.current} vault={vault.current} dark={dark} onTheme={onTheme} onLogout={logout} />
 
   return <div className="flex min-h-dvh flex-col bg-primary text-primary">
     <header className="flex shrink-0 items-center justify-between gap-lg border-b border-secondary px-xl py-lg sm:px-3xl">
@@ -168,7 +204,7 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
             const id = ++generation.current
             mutation.current = true
             setPending('Opening offline demo…'); setError('')
-            try { const result = await agentJson<WalletSession>('/auth/demo', { method: 'POST', body: '{}' }); if (id === generation.current) accept(result) }
+            try { const result = await agentJson<WalletSession>('/auth/demo', { method: 'POST', body: '{}' }); if (id === generation.current) { accept(result); notifySessionChange() } }
             catch (error) { if (id === generation.current) setError(redactBrowserText(error instanceof Error ? error.message : 'Demo unavailable.')) } finally { if (id === generation.current) { mutation.current = false; setPending('') } }
           }} quiet size="sm">Try offline demo</Button>}</div>
         <p className="mt-xl flex items-start gap-sm border-t border-secondary pt-xl text-xs text-tertiary"><ShieldCheck size={15} className="shrink-0" aria-hidden="true" />No funds are spent during login. Never enter a seed phrase or wallet private key. You approve every code edit separately.</p>
@@ -176,6 +212,7 @@ export default function WalletGate({ dark, onTheme }: { dark: boolean; onTheme: 
     </main>
     <footer className="mx-auto w-full max-w-5xl border-t border-secondary px-xl py-xl sm:px-4xl">
       <details className="mb-lg"><summary className="cursor-pointer rounded-md text-xs text-tertiary focus-visible:ring-2 focus-visible:ring-focus-ring">Operator access token (only if configured)</summary><form className="mt-md flex flex-wrap items-center gap-sm" onSubmit={event => { event.preventDefault(); setWorkspaceToken(token); setToken(''); void refresh() }}><label htmlFor="gate-token" className="sr-only">Optional workspace bearer token</label><input id="gate-token" type="password" autoComplete="off" maxLength={4096} disabled={Boolean(pending)} className={`${fieldClass} min-w-0 flex-1`} value={token} onChange={event => setToken(event.target.value)} /><Button type="submit" disabled={Boolean(pending) || !token}>Unlock</Button></form></details>
+      <LegacyCacheCleanup />
       <p className="text-xs leading-relaxed text-tertiary">Use localhost or HTTPS on a server you trust. Wallet login does not encrypt browser caches or grant Walrus access. Memory adaptation is not model retraining. <a className="rounded-md text-secondary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-focus-ring" href="#/console">Legacy operator console</a></p>
     </footer>
   </div>

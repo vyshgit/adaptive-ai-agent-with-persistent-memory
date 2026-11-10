@@ -3,11 +3,17 @@ import { formatContext } from '../memory/context.mjs'
 
 const travel = /\b(trip|travel|travelling|traveling|flight|fly|flying|itinerary|holiday|vacation|getaway)\b/i
 
-export function recallQueries({ message, history = [] }) {
+export function recallQuery({ message, history = [], project = '' }) {
   const previous = history.findLast(item => item.role === 'user')?.content || ''
   // Short replies need the user's preceding task, not an assistant's guesses.
   const query = message.length < 300 && previous ? `${message}\nPrevious user context: ${previous.slice(0, 1400)}` : message
-  return [query.slice(0, 2000), ...(travel.test(`${message}\n${previous}`)
+  const label = project ? `Project: ${project.replace(/[\r\n\x00-\x1f]/g, ' ').slice(0, 120)}\n` : ''
+  return `${label}${query.slice(0, 2000 - label.length)}`
+}
+
+export function recallQueries({ message, history = [] }) {
+  const previous = history.findLast(item => item.role === 'user')?.content || ''
+  return [recallQuery({ message, history }), ...(travel.test(`${message}\n${previous}`)
     ? ['departure city depart from live in travel preferences'] : [])]
 }
 

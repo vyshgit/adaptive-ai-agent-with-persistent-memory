@@ -101,6 +101,8 @@ test('disconnect reports server failures inside the wallet dialog and ends the s
     await expect(details.getByRole('button', { name: 'Disconnect wallet', exact: true })).toBeEnabled()
     expect((await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())).authenticated).toBe(true)
     expect((await page.evaluate(() => window.recallloopWalletCalls)).disconnect).toBe(0)
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+    expect(JSON.stringify(await cachedValues(page))).toContain('PENDING_WALLET_DISCONNECT_PROJECT')
     await page.screenshot({ path: testInfo.outputPath('wallet-disconnect-error.png') })
     await details.getByRole('button', { name: 'Disconnect wallet', exact: true }).click()
     await secondRequest.promise
@@ -111,7 +113,8 @@ test('disconnect reports server failures inside the wallet dialog and ends the s
     await expect.poll(() => observedSessions.length).toBe(1)
     expect(observedSessions[0].authenticated).toBe(false)
     expect((await page.evaluate(async () => (await fetch('/api/agent/auth/session')).json())).authenticated).toBe(false)
-    expect(JSON.stringify(await cachedValues(page))).toContain('PENDING_WALLET_DISCONNECT_PROJECT')
+    await page.evaluate(() => { window.recallloopFireDeferredCacheCallbacks(); window.dispatchEvent(new Event('pagehide')) })
+    expect(JSON.stringify(await cachedValues(page))).not.toContain('PENDING_WALLET_DISCONNECT_PROJECT')
     await page.evaluate(() => window.recallloopFireRetiredWalletChange())
     expect(attempts).toBe(2)
     checkErrors()

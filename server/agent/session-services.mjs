@@ -4,7 +4,7 @@ import { tatumSuiGraphql } from '../tatum-client.mjs'
 import { createChainReader } from '../memory/chain-anchor.mjs'
 import { createMemoryBackend, OFFICIAL_RELAYER } from '../memory/memwal-client.mjs'
 import { createMemoryService } from '../memory/service.mjs'
-import { suiAddress } from './wallet-auth.mjs'
+import { suiAddress, walletAgentId } from './wallet-auth.mjs'
 import { readLimitedText } from './sse.mjs'
 
 export function apiCredential(value, label) {
@@ -33,16 +33,23 @@ export function createSessionServices({ env = process.env, graphql = tatumSuiGra
     return reader
   }
   function initialise(session) {
+    const principal = requireText(session.agentId, 'memory principal', 128)
+    if ((session.kind === 'wallet' && principal !== walletAgentId(session.address))
+      || (session.kind === 'demo' && !/^demo-[A-Za-z0-9_-]+$/.test(principal))
+      || !['wallet', 'demo'].includes(session.kind)) {
+      throw new AppError('scope_forbidden', 'A memory workspace must belong to its authenticated wallet or isolated demo session.', 403)
+    }
     session.env = { RECALLLOOP_MEMORY_MODE: session.kind === 'demo' ? 'mock' : '', WALRUS_NETWORK: 'mainnet',
-      MEMWAL_SERVER_URL: OFFICIAL_RELAYER, RECALLLOOP_CAPTURE_MODE: env.RECALLLOOP_CAPTURE_MODE || 'both' }
+      MEMWAL_SERVER_URL: OFFICIAL_RELAYER, RECALLLOOP_CAPTURE_MODE: 'facts' }
     session.chain = chainFor('')
     session.tatumKey = ''
     session.tatum = { configured: false, verified: false, checkpoint: null }
     const chain = { checkpoint: () => session.chain.checkpoint(), object: address => session.chain.object(address), account: address => session.chain.account(address) }
-    session.memory = memoryFactory({ env: session.env, chain })
+    session.memory = memoryFactory({ env: session.env, chain, principal })
   }
   function secrets(session) {
-    return [session.config?.apiKey, session.tatumKey, session.env?.MEMWAL_PRIVATE_KEY].filter(Boolean)
+    return [...new Set([session.config?.apiKey, ...[...(session.modelConnections?.values() || [])].map(config => config.apiKey),
+      session.tatumKey, session.env?.MEMWAL_PRIVATE_KEY].filter(Boolean))]
   }
   async function connectTatum(session, input, signal) {
     if (session.kind !== 'wallet') throw new AppError('wallet_required', 'Sign in with a wallet to connect live APIs. The demo never accepts credentials.', 403)
@@ -98,7 +105,7 @@ export function createSessionServices({ env = process.env, graphql = tatumSuiGra
       const namespaces = await within(sdk.listNamespaces({ limit: 1 }), 20_000, null, signal)
       if (!Array.isArray(namespaces?.namespaces)) throw new AppError('memory_unauthorized', 'The delegate key was not authorized for this account. Check it in the Walrus Memory dashboard.', 403)
       signal?.throwIfAborted()
-      const memory = memoryFactory({ env: candidateEnv, backend,
+      const memory = memoryFactory({ env: candidateEnv, backend, principal: session.agentId,
         chain: { checkpoint: () => session.chain.checkpoint(), object: address => session.chain.object(address) } })
       return { cleanup, commit() {
         committed = true
@@ -122,7 +129,8 @@ export function createSessionServices({ env = process.env, graphql = tatumSuiGra
     delete session.env.MEMWAL_ACCOUNT_ID
     session.env.RECALLLOOP_MEMORY_MODE = session.kind === 'demo' ? 'mock' : ''
     session.memoryConnection = null
-    session.memory = memoryFactory({ env: session.env, chain: { checkpoint: () => session.chain.checkpoint(), object: address => session.chain.object(address) } })
+    session.memory = memoryFactory({ env: session.env, principal: session.agentId,
+      chain: { checkpoint: () => session.chain.checkpoint(), object: address => session.chain.object(address) } })
   }
   function disconnectTatum(session) {
     // A live memory connection requires a verified Tatum identity check.

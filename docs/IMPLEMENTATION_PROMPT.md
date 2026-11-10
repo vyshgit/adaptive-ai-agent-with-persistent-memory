@@ -418,7 +418,19 @@ Content-Type: application/json
 Notes that matter:
 
 - The system prompt goes in `instructions`, **not** in `input` as a `system` message.
-- `store` must be `false`: the app keeps no provider-side conversation state.
+- `store` must be `false` **on every request**. The OpenAI SDK defaults this field to
+  `true` for the Responses API; leaving it unset makes AgentRouter persist responses in one
+  Azure resource and then fail when the next request lands on another.
+- **Never use `previous_response_id`.** Resend the full conversation as plain
+  `{ role, content }` messages. AgentRouter load-balances across Azure resources, and a
+  stored id is only valid on the resource that created it.
+- **Never echo provider-generated items back.** Drop `id` fields, `item_reference` objects,
+  `type: "reasoning"` items, and `encrypted_content`. Send only user/assistant text. If a
+  body contains `rs_...` or `msg_...` ids, strip them before sending.
+- Error `"The requested item was created under a different Azure OpenAI resource"` means
+  the request carried stored state across resources. Fix by rebuilding a stateless body;
+  retrying the same body will keep failing. Map it to `llm_state_mismatch` and retry once
+  with a sanitised, id-free request.
 - A plain string is also accepted for `input` (`"input": "ping"`), but send the message
   array so multi-turn history works.
 - `max_output_tokens` counts **reasoning tokens too**. A 20-token cap produced
@@ -429,6 +441,24 @@ Notes that matter:
   `output[]` items where `type === "message"`, then `content[]` where
   `type === "output_text"`. There is no `output_text` field on this gateway's response.
 - The `output` array can contain a `reasoning` item before the `message` item. Skip it.
+
+```js
+// server/agent/llm.mjs
+// Build a stateless Responses `input` array from the local transcript.
+//
+// AgentRouter load-balances across Azure OpenAI resources. Stored response ids, item
+// references, reasoning items, and encrypted_content are only valid on the resource that
+// created them, so they must never cross a request boundary. Sending plain text is the
+// only portable shape.
+export function toStatelessInput(history) {
+  return history
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({
+      role: m.role,
+      content: [{ type: m.role === 'user' ? 'input_text' : 'output_text', text: m.content }],
+    }))
+}
+```
 
 #### Responses API streaming events
 
@@ -806,6 +836,7 @@ else with a tool error the model can read. Maximum three tool rounds per turn.
 | `unauthorized` | 401/403 | Key missing or `agentId` mismatch |
 | `llm_not_configured` | 503 | Live mode without base URL/key/model |
 | `llm_failed` | 200 (SSE error) | Provider failure; retryable flag |
+| `llm_state_mismatch` | 200 (SSE error) | Stored item sent to another Azure resource; retry with a stateless body |
 | `capture_failed` | 200 (SSE `stored`) | Answer succeeded, memory write failed |
 | `seed_refused` | 412 | Not relayer + mainnet, or missing confirm |
 
@@ -1194,6 +1225,9 @@ npm run seed:memory
 - **Do not use `EventSource`.** It cannot POST and cannot send a body.
 - **Do not call `/v1/chat/completions` for `gpt-6.1-sol`.** AgentRouter rejects it with
   HTTP 400 and tells you to use `/v1/responses`. Implement the Responses API.
+- **Do not send stored Responses state.** `store: false`, no `previous_response_id`, no
+  `rs_...`/`msg_...` item ids, no `encrypted_content`. AgentRouter's Azure pool cannot
+  resolve an item created by a different resource.
 - **Do not spoof another tool's User-Agent or `anthropic-*` headers** to get past
   AgentRouter's client allowlist. Demo with the mock LLM instead.
 - **Do not put the agent router after the global 32 KB JSON parser.** Long chats return 413.

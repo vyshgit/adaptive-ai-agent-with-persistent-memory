@@ -23,7 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - name: Unit, HTTP, security, CLI, and legacy regression tests
-        run: npm test
+        run: npm test -- --test-concurrency=1
       - name: Legacy lexical retrieval benchmark
         run: npm run benchmark:retrieval
       - name: Legacy paraphrase and hard-negative retrieval evaluation
@@ -36,6 +36,10 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ['workspace', 'local-builder']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,11 +49,15 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Signed synthetic wallet and offline workspace scenarios
+        if: matrix.suite == 'workspace'
         run: npm run test:browser
+      - name: Real local launcher, folder switching and offline SDK scenarios
+        if: matrix.suite == 'local-builder'
+        run: npm run test:browser:builder
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-failure-report
+          name: ${{ matrix.suite }}-browser-failure-report
           path: .playwright/
           include-hidden-files: true
           retention-days: 7

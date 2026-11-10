@@ -27,9 +27,16 @@ import { createMemoryRouter } from './routes/memory.mjs'
 import { authenticateAgent } from './agent-auth.mjs'
 import { authenticateAdmin } from './admin-auth.mjs'
 import { publicError, AppError } from './safety.mjs'
+import { createBuilderService } from './builder/service.mjs'
+import { createStaticPreview } from './builder/preview.mjs'
+import { builderRoot, localBuilderGuard } from './builder/policy.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
+const local = process.argv.includes('--local')
+const host = process.env.HOST || '127.0.0.1'
+const workspaceOption = process.argv.indexOf('--workspace')
+const localRoot = local ? await builderRoot(workspaceOption >= 0 ? process.argv[workspaceOption + 1] : undefined, host) : null
 
 // Run from the project root. The preview-sidecar starts this server with CWD=/,
 // but tooling that resolves paths from the CWD — notably Tailwind's `content`
@@ -38,6 +45,9 @@ const root = path.join(__dirname, '..')
 process.chdir(root)
 
 const app = express()
+// This applies to the WHOLE app/Vite, not only the tool routes. A hosted app
+// cannot enable local execution through credentials, headers or browser input.
+if (local) app.use(localBuilderGuard)
 // Redact known credentials before route parsers or handlers can send an error.
 app.use(credentialGuard)
 
@@ -51,10 +61,14 @@ const llm = createLlm({ env })
 const connections = createConnectionStore({ env })
 const services = createSessionServices({ env })
 const wallets = createWalletAuth({ env, initialise: services.initialise })
-app.get('/api/health', (_req, res) => res.json({ ok: true, product: 'RecallLoop', version: '0.2.0' }))
-// Larger parsers precede the legacy 32 KB parser. No project files are written on the server.
+const preview = local ? await createStaticPreview() : null
+const builder = local ? await createBuilderService({ enabled: true, directory: localRoot, host, env, preview,
+  assertSession: wallets.assertActive, secrets: services.secrets }) : null
+app.get('/api/health', (_req, res) => res.json({ ok: true, product: 'RecallLoop', version: '0.2.0', localBuilder: local }))
+// Larger parsers precede the legacy 32 KB parser. Only explicitly enabled local
+// builder routes can write a reviewed project edit; the hosted workspace cannot.
 app.use('/api/agent', createWorkspaceAuth(env), express.json({ limit: '1mb', inflate: false }), wallets.middleware,
-  createAgentRouter({ llm, connections, wallets, services, env }))
+  createAgentRouter({ llm, connections, wallets, services, builder, env }))
 app.use('/api/memory', express.json({ limit: '1mb' }), createMemoryRouter({ memory, authenticateAgent, authenticateAdmin, agentId }))
 app.use(express.json({ limit: '32kb' }))
 
@@ -70,6 +84,10 @@ app.use((error, _req, res, _next) => {
 })
 
 const server = createHttpServer(app)
+if (local) server.on('upgrade', (req, socket) => {
+  localBuilderGuard({ ...req, get: key => req.headers[key], socket, protocol: 'http' },
+    { status() { return this }, json() { socket.destroy() } }, () => {})
+})
 
 // All Vite config is inline — no vite.config.js needed, no temp files written.
 // cacheDir points to /tmp so dep pre-bundling works on read-only node_modules mounts.
@@ -87,12 +105,16 @@ vite = await createViteServer({
   server: {
     middlewareMode: true,
     hmr: { server },
+    // Traces save fetched HTML under the app root. In middleware mode Vite
+    // otherwise treats each saved snapshot as an app-wide page reload, losing
+    // page-only drafts and removing a preview while it is being inspected.
+    watch: { ignored: ['**/.playwright/**'] },
     // Allow any Host — the preview is served on a per-project subdomain this file
     // cannot know. Must be the boolean `true` or an array; the string 'all' is
     // iterated per-character and silently blocks everything (no warning, no error).
     // NB: Vite's 403 body says to add the host to vite.config.js — that does not apply
     // here, `configFile: false` means any vite.config.js is silently ignored.
-    allowedHosts: true,
+    allowedHosts: local ? ['localhost', '127.0.0.1', '::1'] : true,
   },
   appType: 'spa',
 })
@@ -100,13 +122,13 @@ app.use(vite.middlewares)
 }
 
 const port = process.env.PORT ?? 3000
-const host = process.env.HOST || '127.0.0.1'
 server.listen(port, host, () => {
-  console.log(`RecallLoop listening at http://${host}:${port}/#/agent${demo ? ' (explicit mock demo; memory is ephemeral)' : ''}`)
+  console.log(`RecallLoop listening at http://${host}:${port}/#/agent${local ? ' (local builder; folder consent and per-action approvals required)' : ''}${demo ? ' (scripted model; memory is ephemeral)' : ''}`)
 })
 
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
-  wallets.close()
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
+  await wallets.close()
+  await builder?.close()
   memory.destroy()
   server.close(() => process.exit(0))
   server.closeAllConnections()
