@@ -6,7 +6,7 @@ sessions. It connects a Sui wallet, any OpenAI-compatible model provider, and Wa
 recalled at the start of each session, so you don't re-introduce yourself. Built for
 **Tatum × Walrus Total Recall, Track 2 — Smart Agents for Real Life**.
 
-**Demo video:** _[paste your 2–3 minute demo recording URL here — YouTube, Loom, or a direct MP4]_
+**Demo video:** https://youtu.be/OM7Q6tu710I._
 
 ## What it does
 
