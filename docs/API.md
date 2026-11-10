@@ -456,7 +456,7 @@ not the legacy API or wallet workspace retrieval path. The optional
 
 | Variable | Purpose / default |
 | --- | --- |
-| `OPENAI_API_KEY` | Required embedding-provider credential; never commit it. |
+| `OPENAI_API_KEY` | Required embedding-provider credential **for the operator-only `npm run evaluate:vector` CLI experiment only**; not used by the wallet workspace, which needs no embedding key. Never commit it. |
 | `RECALLLOOP_EMBEDDING_MODEL` | `text-embedding-3-small`. |
 | `RECALLLOOP_EMBEDDING_DIMENSIONS` | 384. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1`. |

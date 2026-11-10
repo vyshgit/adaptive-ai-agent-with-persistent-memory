@@ -71,18 +71,29 @@ Credentials live in tab/form memory and a one-hour server session; saved copies 
 at rest. Logout/restart drops server connections — reconnect after signing in again.
 Live generation consumes provider quota; capture and seeding can consume Mainnet account
 quota. Walrus blobs are encrypted at rest, but the relay and your model see plaintext — use
-synthetic, non-sensitive data while testing.
+synthetic, non-sensitive data while testing. Memory **embeddings come from the Walrus
+relayer** — no embedding key is needed in the workspace — and the optional operator-side
+vector experiment (`npm run evaluate:vector`), not the wallet workspace, is the only thing
+that uses your separate, billable `OPENAI_API_KEY`. See
+[provider setup → Embeddings](docs/PROVIDER_SETUP.md#embeddings-are-separate).
 
 ## Try the learning loop
+
+> The **offline demo** seeds a four-file `src/greet.ts` sandbox for this scenario. A wallet
+> workspace starts **blank** — import your files, or add a file first to follow the same
+> steps live.
 
 1. Keep **Auto-memory** on. In **Talk**, say: “I prefer TypeScript and npm with small
    reviewable changes,” and wait for confirmed facts (or teach it manually in **Memory**).
 2. Start a **new session**. In **Build**, ask: “Use my TypeScript and npm preferences to fix
    greet for missing and empty names.” Recalled-memory chips show what was retrieved.
 3. Open **Review**, inspect the diff, and **Apply in browser** — a stale proposal is blocked
-   if the file changed. No disk files are touched.
+   if the file changed. No disk files are touched. Applied and pending proposals can be
+   removed individually (**Remove from queue**) or the whole queue cleared (**Clear queue**)
+   without reverting applied edits.
 4. Download the result, test it yourself, and **Record outcome**. Approval is not proof the
-   code works.
+   code works. Overall the Files pane can export the whole project as a **zip** and preview
+   it offline in a sandboxed frame.
 5. **Clear local history** and ask what's remembered — this clears only the browser cache,
    not remote memory.
 
@@ -97,6 +108,10 @@ synthetic, non-sensitive data while testing.
 - Read-only tools: `list_files`, `read_file`, `search_files`, `recall_memory`, `sui_read`.
   Workflow tools: `plan_task` (up to six steps) and `ask_user` (one clarification). Build
   exposes `propose_file`, review-gated — the model has no write, shell, or signing tool.
+- Files stay browser-local: import by folder or file, edit in place, remove any file, and
+  export the project as a **zip** (older JSON backups still import). An HTML entry renders in
+  a **sandboxed offline preview** — inlined local CSS/JS/SVG, external and missing references
+  stripped, no network access and no app-origin access.
 - Up to 3 tool rounds with 4 calls per round; up to 64 text files / 20,000 characters each.
   Secret files, unsafe paths, and binary imports are excluded.
 - **Auto-memory** captures approved facts only from your statements after success —
@@ -133,7 +148,7 @@ feature is claimed. See [memory privacy](docs/MEMORY_PRIVACY.md).
 ## Tests
 
 ```bash
-npm test                        # 270 unit/HTTP tests
+npm test                        # 276 unit/HTTP tests
 npm run typecheck
 npm run build
 npm run demo:agent              # credential-free two-session recall loop

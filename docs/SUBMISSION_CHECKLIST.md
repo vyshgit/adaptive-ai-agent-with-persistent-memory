@@ -13,9 +13,11 @@ Local validation and release-review status updated **10 November 2026**.
 
 - [x] Memory-first conversation/planning, bounded reviewed coding, and visible recall/capture
   workflow implemented; working plans and draft-only clarification replies are distinct from actions.
-- [x] Credential-free local startup, CLI demo, a complete 270-test run, and build/typecheck
-  validated. All 65 Chromium scenarios have passing observations across full runs and
-  targeted reruns. Details: [VALIDATION.md](VALIDATION.md).
+- [x] Credential-free local startup, CLI demo, a complete 276-test run, and build/typecheck
+  validated after the follow-up features (zip export, sandboxed preview, blank wallet start,
+  file removal, review queue controls). All 65 Chromium scenarios have passing observations
+  across the complete run plus clean targeted reruns of the two files whose assertions were
+  updated for the new blank wallet start. Details: [VALIDATION.md](VALIDATION.md).
 - [x] Per-user account/service isolation, default facts-only Auto-memory with a disable control
   and separate raw consent, revocable tab caches, key-free cross-tool setup, and encrypted
   multi-profile device-vault behavior validated offline.

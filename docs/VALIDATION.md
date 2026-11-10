@@ -11,10 +11,10 @@ obtained on Linux with Node 26.13.0 and system Chromium, after the local-builder
 
 | Command | Observed result |
 | --- | --- |
-| `npm test -- --test-concurrency=1` | **270 passed, 0 failed, 0 cancelled, 0 skipped** in ~44 seconds, including shared provider dispatch, private Gemini signature replay, profiles, vault migration, automatic memory, and HTTP privacy regressions. |
+| `npm test` (default concurrency) | **276 passed, 0 failed, 0 cancelled, 0 skipped** after the follow-up features, including shared provider dispatch, private Gemini signature replay, profiles, vault migration, automatic memory, HTTP privacy regressions, the STORE-method zip writer (every entry CRC cross-checked against Node's `zlib.crc32`), the sandboxed preview builder, and demo/wallet project seeding. The earlier bounded run qualified 270/270 pre-follow-up; re-run bounded on any host before release. |
 | `npm run typecheck` | Passed. |
-| `npm run build` | Passed; production JavaScript **539.87 kB / 159.67 kB gzip**. Vite reports its standard over-500-kB chunk-size warning; no build errors. |
-| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser` | Full run: **65 passed, 0 failed** in 8.3 minutes. |
+| `npm run build` | Passed; production JavaScript ~540 kB / ~160 kB gzip. Vite reports its standard over-500-kB chunk-size warning; no build errors. |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:browser` | Complete run on 10 November 2026 after the follow-up features: all 10 files, **63 passed / 2 failed**. Both failures were test assertions pinned to the old always-seeded wallet project (files, privacy, accessibility) and were updated to the new blank-start behavior with a shared `addProjectFile` helper; every affected file then passed clean in targeted reruns (privacy 8, accessibility 5, workspace 7, plus the earlier wallet/settings files). |
 | `npm run demo:agent` | Passed, isolated mock; first-session fact recalled in a new session, scripted review-only code proposal; no network/provider/Mainnet calls. |
 | `npm run benchmark:retrieval` | Passed; four synthetic lexical cases, Recall@3 / MRR **1 / 1**. |
 | `npm run evaluate:retrieval` | Passed; synthetic evaluation Recall@3 / MRR **1 / 1**, hard-negative rate **0.375**, **0 cross-agent leaks**. Not a live semantic-quality benchmark. |
@@ -203,7 +203,8 @@ passed **218 tests and 49 Chromium scenarios**. The prior integrated-workspace m
 **289 tests and 74 Chromium scenarios**. The preceding automatic-memory/provider milestone
 passed **329 tests and 87 Chromium scenarios**, followed by
 focused state/provider/accessibility checks. The local-builder de-scope records
-**270 tests and 65 Chromium scenarios, all passing** with the full-run/rerun qualifications above.
+**276 tests and 65 Chromium scenarios passing** with the complete-run + targeted-rerun
+qualifications above. Re-run the complete browser suite after any further code change.
 CI failure-artifact upload includes the hidden `.playwright/` report directory.
 
 ### Final continuation review

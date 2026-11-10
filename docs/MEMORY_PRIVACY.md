@@ -124,7 +124,7 @@ without installing a connection or saving that key.
 | Party / surface | Important limit |
 | --- | --- |
 | Trusted RecallLoop server | Receives submitted model/Tatum/delegate credentials and current chat/file/memory context. Sessions are in memory, not a trustless secret vault. |
-| Walrus Memory relayer | Processes plaintext for embedding/encryption, even though stored Walrus blobs are encrypted. This is not end-to-end secrecy from the relayer. |
+| Walrus Memory relayer | Processes plaintext for embedding/encryption, even though stored Walrus blobs are encrypted. This is not end-to-end secrecy from the relayer. The workspace never holds an embedding key; embeddings are a relayer service, and the separate operator `OPENAI_API_KEY` exists only for the offline vector experiment. |
 | Chosen model provider | Receives hosted conversation context/selected files, or bounded visible task prose, requested safe disk files/tool results, and opted-in or reviewed recall for a local task. `store: false` avoids provider-stored Responses linkage; it is not a retention guarantee. |
 | Browser/device user | Can inspect an active tab/profile. Chat/project scoping and redaction are not encryption; the optional credential vault protects a locked saved copy, not an unlocked/compromised page, malicious extension, or shared credentials. Use separate browser/OS profiles. |
 | Legacy `/api/walrus` publisher | Publishes plaintext blobs that may be fetched outside this application's authentication by blob ID. Never use it for private wallet chats/memories. |

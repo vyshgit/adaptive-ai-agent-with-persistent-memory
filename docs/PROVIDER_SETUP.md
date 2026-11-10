@@ -228,9 +228,38 @@ For a trusted coding tool, use **Walrus → Prepare cross-tool setup** locally (
 
 ## Embeddings are separate
 
-Portable Walrus memory uses the relayer's embedding service. The workspace model API key is **not** used as an embedding key.
+Walrus Memory never asks the workspace for an embedding key: embeddings are computed by the
+**relayer** when the MemWal SDK ingests or recalls text. Your model key, Tatum key, and
+delegate key are each out of that path, and no browser form for an embedding key exists.
+Which credential does what:
 
-The optional operator-only `npm run evaluate:vector` experiment uses the separate `OPENAI_API_KEY` and embedding configuration in `server/openai-embedding-provider.mjs` (`text-embedding-3-small`, 384 dimensions, 15-second timeout by default). It is billable, CLI-only, and excluded from CI. It does not become a wallet credential and no embedding-key browser form is provided. See [the parked retrieval experiments](./API.md#parked-legacy-retrieval-experiments) for its scope.
+| Credential | Used for | Who owns it |
+| --- | --- | --- |
+| Model key (Model settings) | Generation/answers in the workspace | Your chosen provider |
+| Tatum key (Tatum settings) | Read-only Sui Mainnet observation | Your Tatum account |
+| Delegate private key (Walrus Memory settings) | Signing memory writes as your account | Your MemWal account |
+| `OPENAI_API_KEY` (operator env only) | Embeddings in the optional CLI vector experiment | Your own OpenAI billing |
+
+Nothing in `npm run dev` requires `OPENAI_API_KEY`. It exists only for the operator-side
+retrieval experiment (`npm run evaluate:vector`), kept apart from the wallet workspace by
+design — see the details in [the parked retrieval experiments](./API.md#parked-legacy-retrieval-experiments).
+
+### If you want to run the vector experiment
+
+1. Export the variables before the command (shell environment only, never in `.env`
+   committed to git; see `.env.example` for the full list):
+   ```bash
+   export OPENAI_API_KEY=sk-your-operator-key          # required, billable
+   # optional overrides: RECALLLOOP_EMBEDDING_MODEL (text-embedding-3-small),
+   # RECALLLOOP_EMBEDDING_DIMENSIONS (384), OPENAI_BASE_URL, RECALLLOOP_EMBEDDING_TIMEOUT_MS (15000)
+   export RECALLLOOP_WORKSPACE_TOKEN=...               # see Advanced settings (temporary gate)
+   npm run evaluate:vector
+   ```
+2. Understand what it costs and sends: query and memory text go to the configured embedding
+   provider, uses `text-embedding-3-small` (384 dimensions, 15-second timeout), and is billed
+   to that key. It never becomes a wallet credential, is excluded from CI, and reads the
+   same local demo evidence file only.
+
 
 ## Offline and advanced controls
 
