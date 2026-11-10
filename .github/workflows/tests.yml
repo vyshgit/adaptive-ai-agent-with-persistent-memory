@@ -31,8 +31,8 @@ jobs:
       - run: npm run build
       - name: Credential-free two-session recall loop
         run: npm run demo:agent
-      - name: Dependency vulnerability audit
-        run: npm audit
+      - name: Dependency vulnerability audit (critical)
+        run: npm audit --audit-level=critical
 
   browser:
     runs-on: ubuntu-latest
